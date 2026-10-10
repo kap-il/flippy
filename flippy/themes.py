@@ -111,6 +111,32 @@ def glyph(cr, name, cx, cy, s, rgba):
     cr.fill()
 
 
+def thinking(card):
+    """Waiting for the model's first words."""
+    return card.phase == "thinking" and not card.error
+
+
+def thinking_word(t, word="thinking"):
+    """ "thinking", "thinking.", "thinking..", "thinking..." on a loop, so the card visibly works."""
+    return word + "." * (int(t * 3) % 4)
+
+
+def sweep(cr, x, y, w, h, t, rgba, radius=0):
+    """An indeterminate progress bar: a lit segment gliding along the track, wrapping at the end."""
+    seg = w * 0.32
+    pos = ((t / 1.4) % 1.0) * (w + seg) - seg
+    cr.save()
+    cr.rectangle(x, y, w, h)
+    cr.clip()
+    if radius:
+        round_rect(cr, x + pos, y, seg, h, radius)
+    else:
+        cr.rectangle(x + pos, y, seg, h)
+    cr.set_source_rgba(*rgba)
+    cr.fill()
+    cr.restore()
+
+
 def playing(card):
     """Should a player skin show 'pause' (i.e. something is in progress)?"""
     return card.phase == "thinking" or not (card.paused or card.finished)
@@ -514,6 +540,14 @@ class Midnight(Theme):
         if head:
             show(cr, head, x + 16, ty, (*self.head, 1))
             ty += lsize(head)[1] + 3
+        if thinking(card):  # the dots cycle, and a glow glides along the bottom edge
+            show(cr, layout(cr, thinking_word(t), self.font, opts["text_size"]), x + 16, ty, (*self.fg, 1))
+            cr.save()
+            round_rect(cr, x + 1, y + 1, w - 2, h - 2, self.radius)
+            cr.clip()
+            sweep(cr, x, y + h - 3, w, 3, t, (*self.head, 0.9))
+            cr.restore()
+            return
         show(cr, body, x + 16, ty, (*(self.err if card.error else self.fg), 1))
         if lean_controls(card, opts):
             self._draw_controls(cr, x, y, w, h, card, opts)
@@ -803,7 +837,11 @@ class Terminal(Theme):
             show(cr, head, x + 14, ty, (*self.green, 1))
             ty += lsize(head)[1] + 4
         blink = (card.typing or card.phase == "thinking") and int(t * 2.5) % 2
-        if blink:  # hide the block cursor every other beat
+        if thinking(card):  # a spinning bar, like a CLI waiting on a request
+            spin = "|/-\\"[int(t * 8) % 4]
+            body = layout(cr, f"{spin} {thinking_word(t)}" + ("" if blink else " █"), self.font,
+                          opts["text_size"] - 1, width=380 if card.follow else 540)
+        elif blink:  # hide the block cursor every other beat
             body = layout(cr, card.text or " ", self.font, opts["text_size"] - 1, width=380 if card.follow else 540)
         show(cr, body, x + 14, ty, (1.0, 0.45, 0.4, 1) if card.error else (*self.green, 1))
         if lean_controls(card, opts):
@@ -1126,7 +1164,7 @@ class Y2K(Theme):
         cr.set_source_rgb(0, 0, 0)
         cr.fill()
         bevel(cr, lx, ly, lw, h, self.METAL_LO, self.METAL_HI)
-        text = layout(cr, (card.text or "thinking…").upper(), PIXEL_FONT, 20)
+        text = layout(cr, thinking_word(t).upper(), PIXEL_FONT, 20)
         tw_, th_ = lsize(text)
         show(cr, text, lx + 10, ly + (h - th_) / 2, (*self.LCD, 1))
         if int(t * 2.5) % 2:  # a blinking block cursor after it
@@ -1388,10 +1426,13 @@ class MediaPlayer(Theme):
             cr.set_source_rgba(1, 1, 1, 0.12)
             cr.set_line_width(1)
             cr.stroke()
+        if thinking(card):
+            body = layout(cr, thinking_word(t), self.font, opts["text_size"], width=self._w(card) - 44)
         for dx, dy in ((1, 1), (0, 1), (1, 0), (-1, 0), (0, -1)):
             show(cr, body, px + 12 + dx, py + 8 + dy, (0, 0, 0, 0.55))
         show(cr, body, px + 12, py + 8, (1.0, 0.62, 0.58, 1) if card.error else (0.97, 0.99, 1.0, 1))
-        if card.phase == "thinking":  # no seek line or controls until there's an answer
+        if card.phase == "thinking":  # no seek line or controls until there's an answer: a blue glow gliding instead
+            sweep(cr, px + 6, py + ph - 3, pw - 12, 2, t, (0.55, 0.85, 1.0, 0.95), radius=1)
             return
 
         # seek line with a tick per walkthrough step and a glowing nub
@@ -1607,7 +1648,13 @@ class Glass(Theme):
 
         head, body = self._layouts(cr, card, opts)
         if card.phase == "thinking":
-            show(cr, body, x + P, y + P, (1, 1, 1, 0.9))
+            word = layout(cr, thinking_word(t), self.font, opts["text_size"] - 1) if thinking(card) else body
+            show(cr, word, x + P, y + P, (1, 1, 1, 0.9))
+            cr.save()
+            round_rect(cr, x + 1, y + 1, w - 2, h - 2, self.R)
+            cr.clip()
+            sweep(cr, x + P, y + h - 5, w - 2 * P, 2, t, (1, 1, 1, 0.8), radius=1)
+            cr.restore()
             return
         ty = y + P
         show(cr, head, x + P, ty, (1.0, 0.6, 0.56, 1) if card.error else (1, 1, 1, 0.96))
@@ -1760,6 +1807,10 @@ class Mono(Theme):
         if head:
             show(cr, head, x + self.P, ty, (*self.fg, 1))
             ty += lsize(head)[1] + 4
+        if thinking(card):  # the dots cycle, and a bar sweeps along the bottom edge
+            show(cr, layout(cr, thinking_word(t), self.font, opts["text_size"]), x + self.P, ty, (*self.fg, 1))
+            sweep(cr, x + 1, y + h - 3, w - 2, 2, t, (*self.fg, 0.9))
+            return
         show(cr, body, x + self.P, ty, (*(self.err if card.error else (self.fg if head is None else self.muted)), 1))
         if not lean_controls(card, opts):
             return

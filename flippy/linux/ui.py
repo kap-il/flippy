@@ -29,13 +29,13 @@ gi.require_version("Gtk4LayerShell", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402
 
-from .. import loop, pointers, settings, themes  # noqa: E402
+from .. import loop, settings, themes  # noqa: E402
 from ..history import PROMPTS  # noqa: E402
 from ..overlay import OverlayBase  # noqa: E402
-from . import act, pointer_editor, preload, sensors, wl  # noqa: E402
+from ..shell.window import AppHost  # noqa: E402
+from . import act, preload, sensors, wl  # noqa: E402
 from .notice import Notice, NoticeLayer  # noqa: E402
 from .screenshot import Screenshotter  # noqa: E402
-from .settings_window import SettingsWindow  # noqa: E402
 
 HIDE_SETTLE_MS = 700        # box closed -> COSMIC's dock drops its icon and re-centers (~0.5s); wait it out
 NUDGE_TIMEOUT_S = 15        # "Need a hand?" goes away by itself (counts as "Not now"), like flippy/mac/nudge.py
@@ -344,7 +344,7 @@ class InputBox:
         self.entry.emit("activate")
 
 
-class Platform:
+class Platform(AppHost):
     hide_settle_ms = HIDE_SETTLE_MS
     act_catalog, act_prompt = act.CATALOG, act.PROMPT  # /act's tools on COSMIC (flippy/linux/act.py)
 
@@ -356,8 +356,6 @@ class Platform:
         Gtk.StyleContext.add_provider_for_display(display, base, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.theme_css = Gtk.CssProvider()  # the active theme's question-box styling
         Gtk.StyleContext.add_provider_for_display(display, self.theme_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
-        self.settings_win = None
-        self.setup_win = None
         self.overlay = Overlay(app)
         self.screen = self.screen_size()  # logical px, for the pointer's worker threads (GDK is main-thread only)
         self.screenshotter = Screenshotter()
@@ -405,30 +403,32 @@ class Platform:
     def shortcut_problems(self):
         """{name: why it won't work, or None} for flippy/shortcuts.py NAMES: unbound, or keys COSMIC also uses."""
         from .. import shortcuts
-        from .settings_window import SHORTCUTS
+        from .setup import SHORTCUTS
         system = [shortcuts.read(p) for p in (*shortcuts.COSMIC_DEFAULTS, shortcuts.COSMIC_SYSTEM)]
         return shortcuts.cosmic_problems(shortcuts.read(SHORTCUTS), system)
 
     def change_shortcuts(self):
-        """Flippy's setup adds the missing ones; COSMIC Settings changes keys. Setup shows both."""
-        self.open_setup()
+        """Settings, on its Shortcuts page (COSMIC runs them; the page says where to change them)."""
+        self.open_app("settings/shortcuts")
 
     def key_label(self, name):
         """For the tour's cards: the COSMIC shortcut that runs it ("Super+Shift+Space"), or None if there isn't one."""
-        from .settings_window import flippy_shortcuts, pretty_accel
+        from .setup import flippy_shortcuts, pretty_accel
         want = {"ask": ("", "ask"), "draw": ("draw",), "video": ("video",), "pause": ("pause-toggle",)}[name]
         return next((pretty_accel(accel) for accel, args in flippy_shortcuts() if args in want), None)
 
     def setup_pending(self):
-        from .setup_window import needs_setup
+        from .setup import needs_setup
         return needs_setup() or self.setup_win is not None
 
-    def open_setup(self):
-        from .setup_window import SetupWindow
-        if self.setup_win is None:
-            self.setup_win = SetupWindow(self.app, lambda: self.command("settings"),
-                                         lambda: setattr(self, "setup_win", None))
-        self.setup_win.present()
+    def _new_app_window(self):
+        """History, setup and settings (flippy/linux/shell_window.py, flippy/shell/window.py AppHost)."""
+        from .shell_window import AppWindow  # local: WebKit only loads when asked for
+
+        def caps():
+            blur = self.overlay.blur  # made on the overlay's first paint
+            return {"blur": None if blur is None else bool(blur.available)}
+        return AppWindow(on_close=self._app_closed, command=self.command, log=lambda m: None, app=self.app, caps=caps)
 
     def ask_goal(self, app_id, name):
         """What do they want to do in this app? Steers its tips (the panel menu's "Set a goal for <app>…")."""
@@ -734,20 +734,6 @@ class Platform:
             return True
         self.service.connect("incoming", incoming)
         self.service.start()
-
-    def open_settings(self, on_preview, on_reset):
-        if self.settings_win is None:
-            self.settings_win = SettingsWindow(self.app, on_preview=on_preview, on_reset=on_reset,
-                                               command=self.command,
-                                               glass=bool(self.overlay.blur and self.overlay.blur.available))
-            self.settings_win.connect("close-request", lambda w: setattr(self, "settings_win", None) or False)
-        self.settings_win.present()
-
-    def demo_pointer(self, name, on_saved):
-        """Scripted demo: draw a pointer in the editor and save it."""
-        ed = pointer_editor.PixelEditor(self.app, lambda n: None)
-        ed.present()
-        pointer_editor.demo_paint(ed, name, lambda n: on_saved(pointers.PREFIX + n))
 
     def restart(self, full_install=False):
         """Start a fresh daemon (through flippy-ask, after this one's gone) and quit. After an update, refresh the

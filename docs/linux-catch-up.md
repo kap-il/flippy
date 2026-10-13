@@ -82,7 +82,7 @@ Write down what happens for each; fix what fails (section 4 has the known gaps).
 ## 4. Known gaps on Linux (small; do them after section 3)
 
 1. **Start `/act` when Flippy itself is focused and no other window ever was.** macOS falls back to Finder, from where `use_app` opens any app (`mac/ax.py` `front_app`). COSMIC's `atspi.before_flippy` raises instead. Fall back to the file manager (`com.system76.CosmicFiles`) or start with no target and require `use_app` first. Add a test next to `tests/test_linux_act.py`.
-2. **Terminals Flippy opens inherit `FLIPPY_*` variables.** macOS strips them (`mac/setup_window.py` `terminal_env`); do the same for the login terminals in `linux/setup_window.py`, so later `flippy-ask` commands in that terminal don't act on the wrong profile.
+2. ~~**Terminals Flippy opens inherit `FLIPPY_*` variables.**~~ Done: `linux/setup.py` `terminal_env`, like macOS.
 3. **Settings → Shortcuts and setup's shortcut rows don't show ⚠.** The panel menu and the tour do. Add the reason under a broken row using `Platform.shortcut_problems()` (keep it one muted line, like the rest of that page).
 
 When done, open a PR to `main` (don't push to main directly from Linux), and say in it which of section 3 passed.

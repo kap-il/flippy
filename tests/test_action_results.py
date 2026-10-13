@@ -32,6 +32,7 @@ def controller(tools):
     f.overlay=SimpleNamespace(show_text=Mock())
     f._fail=Mock(); f._schedule_fade=Mock(); f._open_setup_if=Mock()
     f.busy=False; f.input_disabled=False
+    f._remember=Mock()  # History; tested in test_history_store
     return f,event
 
 

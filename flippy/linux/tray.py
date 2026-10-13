@@ -22,7 +22,8 @@ ICON_PX = (22, 44)
 MENU = [("Ask about the screen", "ask"), ("Circle and ask", "draw"), ("Check a video edit", "video"), None,
         ("Help when I'm stuck", "help-toggle"), ("Tips while I work", "tips-toggle"),
         ("Watch this app", "watch-front"), ("Set a goal…", "goal-front"), None,
-        ("Preview the look", "preview"), ("Settings…", "settings"), ("New session", "reset"),
+        ("Preview the look", "preview"), ("History…", "history"), ("Settings…", "settings"),
+        ("New session", "reset"),
         None, ("Check for updates…", "update"), ("Setup…", "setup"), ("Take the tour", "tour"), ("Quit Flippy", "quit")]
 
 
@@ -241,7 +242,7 @@ class Tray:
 
     def shortcuts(self):
         from .. import shortcuts
-        from .settings_window import SHORTCUTS, flippy_shortcuts, pretty_accel
+        from .setup import SHORTCUTS, flippy_shortcuts, pretty_accel
         out = {}
         for accel, args in flippy_shortcuts():
             out.setdefault({"": "ask"}.get(args, args), pretty_accel(accel))

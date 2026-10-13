@@ -6,3 +6,4 @@ pyobjc-framework-ApplicationServices
 pyobjc-framework-Cocoa
 pyobjc-framework-CoreText
 pyobjc-framework-Quartz
+pyobjc-framework-WebKit

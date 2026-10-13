@@ -27,6 +27,7 @@ def controller(infer=True, platform_acts=True):
     f._owns = lambda req: True
     f._stop_playback = Mock()
     f._fail = Mock()
+    f._remember = Mock()  # History (flippy/history_store.py); tested in test_history_store
     f.action_tools = None
     def act(question):
         f.action_tools = object()

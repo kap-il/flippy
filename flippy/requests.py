@@ -12,6 +12,7 @@ class Request:
     pending: bool = True
     drained: threading.Event = field(default_factory=threading.Event)
     timers: set = field(default_factory=set)
+    history: object = None  # what to save when it ends (flippy/history_store.py): the question, the app
 
     def owns(self, current):
         return current is self and not self.canceled.is_set()

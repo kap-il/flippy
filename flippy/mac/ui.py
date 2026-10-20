@@ -1418,10 +1418,10 @@ def run(make_app):
     if _already_running(SOCK_PATH):
         print("flippy: already running; opened its settings", flush=True)
         return
-    # the daemon is a Python child of Flippy.app, so its menu title (and Dock name, while the app window is open)
-    # would read "Python"
-    info = AppKit.NSBundle.mainBundle().infoDictionary()
-    if info is not None:
+    # run as plain Python (bin/flippy-daemon, not hosted by Flippy.app), the menu title would read "Python"
+    bundle = AppKit.NSBundle.mainBundle()
+    info = bundle.infoDictionary()
+    if info is not None and not str(bundle.bundleIdentifier() or "").startswith("dev.flippy."):
         info["CFBundleName"] = "Flippy"
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon

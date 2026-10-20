@@ -11,10 +11,10 @@ import os
 
 import objc
 from AppKit import (NSApp, NSAppearance, NSApplicationActivationPolicyAccessory, NSApplicationActivationPolicyRegular,
-                    NSBackingStoreBuffered, NSColor, NSColorSpace, NSImage, NSMenu, NSMenuItem, NSModalResponseOK,
-                    NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow, NSWindowStyleMaskClosable,
-                    NSWindowStyleMaskFullSizeContentView, NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskResizable,
-                    NSWindowStyleMaskTitled, NSWindowTitleHidden)
+                    NSBackingStoreBuffered, NSBundle, NSColor, NSColorSpace, NSImage, NSMenu, NSMenuItem,
+                    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow,
+                    NSWindowStyleMaskClosable, NSWindowStyleMaskFullSizeContentView, NSWindowStyleMaskMiniaturizable,
+                    NSWindowStyleMaskResizable, NSWindowStyleMaskTitled, NSWindowTitleHidden)
 from Foundation import NSData, NSMakeRect, NSMakeSize, NSObject, NSURL
 from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
 
@@ -40,8 +40,10 @@ class _Handler(NSObject, protocols=[WKScriptMessageHandler]):
 
 
 def _app_icon():
-    """Flippy's icon for the Dock while the window is open. The daemon is a Python child of Flippy.app (or runs
-    from a checkout), so without this the Dock shows Python's icon."""
+    """Flippy's icon for the Dock while the window is open, when the daemon runs as plain Python (bin/flippy-daemon)
+    and the Dock would show Python's. Hosted by Flippy.app (packaging/macos/Launcher.swift), it has Flippy's."""
+    if str(NSBundle.mainBundle().bundleIdentifier() or "").startswith("dev.flippy."):
+        return None
     app = os.environ.get("FLIPPY_APP")  # set by Flippy.app's launcher
     icns = os.path.join(app, "Contents", "Resources", "Flippy.icns") if app else ""
     if os.path.exists(icns):

@@ -41,6 +41,29 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+/// The shared library behind a venv's python (a framework build's Python, or lib/libpython3.X.dylib), or nil for a
+/// static build, which can't be hosted.
+func pythonLibrary(_ venvPython: String) -> String? {
+    let real = URL(fileURLWithPath: venvPython).resolvingSymlinksInPath()
+    let prefix = real.deletingLastPathComponent().deletingLastPathComponent()
+    let candidates = [prefix.appendingPathComponent("Python").path,  // Homebrew's and python.org's framework builds
+                      prefix.appendingPathComponent("lib/lib" + real.lastPathComponent + ".dylib").path]
+    return candidates.first { FileManager.default.fileExists(atPath: $0) }
+}
+
+// The daemon's process, from a checkout's .venv: Flippy.app runs this executable again with FLIPPY_PYTHON_HOST naming
+// that venv's python, and it runs Python in this process. Started as .venv/bin/python, macOS files the daemon under
+// Python.app, so while the app window is open the Dock calls it "Python"; as Flippy.app's executable it's Flippy.
+if let venvPython = ProcessInfo.processInfo.environment["FLIPPY_PYTHON_HOST"] {
+    unsetenv("FLIPPY_PYTHON_HOST")
+    guard let lib = pythonLibrary(venvPython), let handle = dlopen(lib, RTLD_NOW | RTLD_GLOBAL),
+          let pyMain = dlsym(handle, "Py_BytesMain") else { fail("couldn't load the Python behind \(venvPython)") }
+    setenv("__PYVENV_LAUNCHER__", venvPython, 1)  // Python finds the venv as if started as venvPython, then unsets it
+    typealias PyBytesMain = @convention(c) (Int32, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32
+    var argv = ([venvPython] + CommandLine.arguments.dropFirst()).map { strdup($0) } + [nil]  // -m flippy.daemon ...
+    exit(unsafeBitCast(pyMain, to: PyBytesMain.self)(Int32(argv.count - 1), &argv))
+}
+
 /// The copy of the code the daemon runs (flippy/bundle.py has the layout). The app's own copy is installed when
 /// there's no usable copy, when the current one was checked against a different runtime than this app's (an older
 /// or newer Flippy.dmg), or when this app is newer; otherwise the current one, which updates may have moved past
@@ -142,6 +165,11 @@ if bundled {  // the app's own Python, nothing from the user's
     env.removeValue(forKey: "PYTHONPATH")
     env.removeValue(forKey: "PYTHONHOME")
     env["SSL_CERT_FILE"] = resources + "/cacert.pem"  // this Python has no access to the system's certificates
+} else if let me = Bundle.main.executablePath, pythonLibrary(root + "/.venv/bin/python") != nil {
+    daemon.executableURL = URL(fileURLWithPath: me)  // hosts Python itself (FLIPPY_PYTHON_HOST, above)
+    daemon.arguments = ["-m", "flippy.daemon"] + Array(CommandLine.arguments.dropFirst())
+    daemon.currentDirectoryURL = URL(fileURLWithPath: root)
+    env["FLIPPY_PYTHON_HOST"] = root + "/.venv/bin/python"
 } else {
     daemon.executableURL = URL(fileURLWithPath: root + "/bin/flippy-daemon")
     daemon.arguments = Array(CommandLine.arguments.dropFirst())

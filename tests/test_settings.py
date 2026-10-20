@@ -228,35 +228,14 @@ class TestSettings(unittest.TestCase):
                 settings.parse_value(key, raw)
 
 
-@unittest.skipUnless(sys.platform == "darwin", "macOS settings adapter")
-class TestNativePermissionRemoval(unittest.TestCase):
-    def test_selected_app_is_revoked_not_another_app(self):
-        from flippy.mac.settings_window import SettingsWindow
-        controller = SettingsWindow.__new__(SettingsWindow)
+class TestAllowedAppRemoval(unittest.TestCase):
+    """The app window removes one allowed app by writing the list without it (flippy/shell/bridge.py)."""
+    def test_removing_one_keeps_the_others(self):
+        from flippy.shell import bridge
         values = ["com.apple.TextEdit", "org.mozilla.firefox"]
-        controller.allowed_popup = SimpleNamespace(target=lambda: SimpleNamespace(values=values), indexOfSelectedItem=lambda: 1)
-        with patch("flippy.mac.settings_window.settings.remove_allowed_app") as remove:
-            controller._remove_allowed_app()
-        remove.assert_called_once_with("org.mozilla.firefox")
-
-    def test_empty_selection_does_not_revoke(self):
-        from flippy.mac.settings_window import SettingsWindow
-        controller = SettingsWindow.__new__(SettingsWindow)
-        controller.allowed_popup = SimpleNamespace(target=lambda: SimpleNamespace(values=[None]), indexOfSelectedItem=lambda: 0)
-        with patch("flippy.mac.settings_window.settings.remove_allowed_app") as remove:
-            controller._remove_allowed_app()
-        remove.assert_not_called()
-
-    def test_empty_permissions_disable_remove_and_show_placeholder(self):
-        from flippy.mac.settings_window import SettingsWindow
-        from unittest.mock import Mock
-        controller = SettingsWindow.__new__(SettingsWindow)
-        controller.allowed_popup = object()
-        controller.remove_allowed_button = Mock()
-        with patch("flippy.mac.settings_window.settings.get", return_value=[]), patch("flippy.mac.settings_window.set_popup") as fill:
-            controller._refresh_allowed_apps()
-        fill.assert_called_once_with(controller.allowed_popup, [(None, "None yet")], None)
-        controller.remove_allowed_button.setEnabled_.assert_called_once_with(False)
+        with patch("flippy.shell.bridge.settings.set") as write, patch("flippy.shell.bridge.schema.field", return_value={}):
+            bridge.Bridge().op_set("act.allowed_apps", values[:1])
+        write.assert_called_once_with("act", "allowed_apps", ["com.apple.TextEdit"])
 
 
 if __name__ == "__main__":

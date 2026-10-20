@@ -1,0 +1,62 @@
+/* The pointer studio: the same neutral look as the rest of the window around a pixel canvas that keeps the old
+   editor's feel (checkerboard, cell grid, the red tip ring, square swatches, the pixel-sharp preview). */
+.studio {
+  margin: 16px 0 0; background: var(--card); border: 1px solid var(--card-line); border-radius: var(--radius); overflow: hidden;
+  animation: studio-open 0.22s ease; outline: none;
+}
+@keyframes studio-open { from { transform: translateY(-4px); } }
+.studio .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px;
+  border-bottom: 1px solid var(--row-line); }
+.studio .bar strong { font-size: 15px; font-weight: 600; }
+.studio .bar .keys-hint { color: var(--faint); font-size: 12.5px; margin-left: auto; }
+.studio .body { display: flex; gap: 28px; padding: 22px; flex-wrap: wrap; align-items: flex-start; }
+.studio .board-wrap { padding: 12px; border-radius: 14px; background: var(--page); box-shadow: inset 0 0 0 1px var(--card-line); }
+.studio canvas.board { display: block; cursor: crosshair; touch-action: none; border-radius: 4px; }
+.studio .side { flex: 1; min-width: 270px; max-width: 360px; display: flex; flex-direction: column; gap: 20px; }
+.studio .side h4 { margin: 0 0 9px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.studio .line { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* buttons: joined groups read as one segmented control, like the rest of the window */
+.studio .joined { display: inline-flex; background: var(--hover); border-radius: 10px; padding: 3px; gap: 2px; }
+.studio .sbtn {
+  height: 30px; padding: 0 12px; border: 1px solid var(--field-line); border-radius: 9px; background: var(--field);
+  color: var(--text); font: 500 13px/1 system-ui, -apple-system, sans-serif; cursor: pointer;
+}
+.studio .sbtn:hover { border-color: var(--faint); }
+.studio .joined .sbtn { border-color: transparent; background: none; color: var(--muted); border-radius: 7px; }
+.studio .joined .sbtn:hover { color: var(--text); }
+.studio .joined .sbtn[aria-pressed="true"] { background: var(--field); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+.studio .sbtn:disabled, .studio .joined .sbtn:disabled { opacity: 0.4; cursor: default; }
+.studio .sbtn.primary { background: var(--text); color: var(--page); border-color: transparent; padding: 0 18px; }
+.studio .sbtn.quiet { background: none; border-color: transparent; color: var(--muted); }
+.studio .sbtn.quiet:hover { color: var(--text); background: var(--hover); }
+.studio .check { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; color: var(--text); }
+.studio .check input { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; margin: 0; border-radius: 5px;
+  border: 1px solid var(--field-line); background: var(--field); display: grid; place-items: center; cursor: pointer; }
+.studio .check input:checked { background: var(--accent); border-color: var(--accent); }
+.studio .check input:checked::after { content: "\2713"; font-size: 12px; line-height: 1; color: #fff; }
+
+/* color: square swatches stay square, like pixels */
+.studio .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.studio .sw { aspect-ratio: 1; width: 100%; border: 0; border-radius: 6px; padding: 0; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35); }
+.studio .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--page), 0 0 0 4px var(--accent); }
+.studio .sw.clear, .studio .current.clear {
+  background: linear-gradient(to top right, transparent calc(50% - 1px), #ff3333 calc(50% - 1px), #ff3333 calc(50% + 1px), transparent calc(50% + 1px)),
+    repeating-conic-gradient(#6b6b73 0% 25%, #525259 0% 50%) 0 0 / 12px 12px;
+}
+.studio .current { width: 38px; height: 30px; border-radius: 7px; flex: none; box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35); }
+.studio input.hex, .studio input.name {
+  height: 30px; padding: 0 10px; border: 1px solid var(--field-line); border-radius: 9px; background: var(--field);
+  color: var(--text); min-width: 0; user-select: text; -webkit-user-select: text; outline: none;
+}
+.studio input.hex { width: 100px; font: 13px/1 ui-monospace, "SF Mono", Menlo, monospace; }
+.studio input.name { flex: 1; font: inherit; }
+.studio input.hex:focus, .studio input.name:focus { border-color: var(--accent); }
+.studio .chan { display: grid; grid-template-columns: 16px 1fr 36px; align-items: center; gap: 8px; height: 28px; }
+.studio .chan span { color: var(--muted); font-size: 12px; font-weight: 600; }
+.studio .chan output { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.studio .chan canvas { width: 100%; height: 22px; cursor: pointer; display: block; }
+.studio canvas.preview { width: 100%; height: 110px; display: block; border-radius: 10px; }
+.studio .err { color: var(--danger); min-height: 1em; font-size: 12px; }
+.studio .sbtn:focus-visible, .studio input:focus-visible, .studio .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

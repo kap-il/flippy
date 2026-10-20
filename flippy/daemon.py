@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from . import act_memory, errors, loop, onboarding, placement, settings, setup_gate, themes, tips, updates, video, watch
+from . import act_memory, errors, history_store, loop, onboarding, placement, settings, setup_gate, themes, tips, updates, video, watch
 from .providers import Brain
 from .frames import prepare_frame
 from .requests import Request
@@ -244,8 +244,10 @@ class Flippy:
             if not hasattr(self.ui, "video_window"):
                 return NOT_HERE
             return self.video.command(cmd)
-        elif cmd == "setup" and hasattr(self.ui, "open_setup"):  # macOS first-run window
+        elif cmd == "setup" and hasattr(self.ui, "open_setup"):  # first-run setup
             self.ui.open_setup()
+        elif cmd == "history" and hasattr(self.ui, "open_app"):  # the app window's History
+            self.ui.open_app("history")
         elif cmd.startswith("control "):  # same as clicking a player button: control <name> [0-1 for seek/speed]
             parts = cmd.split()
             self.control(parts[1], float(parts[2]) if len(parts) > 2 else 0.0)
@@ -504,6 +506,7 @@ class Flippy:
         if not self.continued:  # a walkthrough going on after your click is still about what you asked
             self.asked = question
         req = self._begin_request("tutor")
+        req.history = {"question": question, "app": self._front_name(), "ts": time.time()}
         self.box.hide()
         keep_marks = self.marked
         question = self._ask_context() + question  # right after a desktop task: what it did
@@ -518,6 +521,38 @@ class Flippy:
             question += "\n(you can act: if I'm asking you to do this for me, reply [ACT] only)"
         self.marked = False
         self._run_request(req, self._ask(question, req, keep_marks=keep_marks, focus=focus), self._on_answer, ASK_TIMEOUT_S)
+
+    def _front_name(self):
+        """The app in front when a question was asked, for History (its name only)."""
+        try:
+            front = self.ui.app_front() if hasattr(self.ui, "app_front") else None
+            return front[1] if front else ""
+        except Exception:
+            return ""
+
+    def _save_history(self, req, kind, raw=None, tools=None, result=None, outcome="completed", detail=""):
+        """One History row (flippy/history_store.py): text only, the steps without their POINT tags. Never fails
+        the request."""
+        h = getattr(req, "history", None)
+        if not h:
+            return
+        req.history = None
+        answer, steps, app = "", (), None
+        if raw is not None:
+            segs = [seg for seg in segments(raw, True) if seg.text]
+            answer = " ".join(seg.text for seg in segs)
+            if len(segs) > 1:
+                steps = [seg.text + (f"  \u2192 {seg.point.label}" if seg.point and seg.point.label else "") for seg in segs]
+        if tools is not None:
+            answer = (tools.failure or "") if outcome == "stopped" else (result if isinstance(result, str) else "")
+            detail = f"{tools.actions} input{'s' if tools.actions != 1 else ''}"
+            app = ", ".join(dict.fromkeys(getattr(tools, "app_names", {}).values())) or None
+        provider = settings.get("provider", "mode")
+        try:
+            history_store.add(kind, h["question"], answer, steps, app if app is not None else h["app"],
+                              provider, outcome, detail, ts=h["ts"])
+        except Exception as e:
+            log(f"history: couldn't save ({type(e).__name__})")
 
     def _can_infer_act(self):
         """Can a plain question turn into a desktop task ("play some jazz in Spotify"), without typing /act?
@@ -686,6 +721,7 @@ class Flippy:
         except ActionError as error:
             return str(error)
         req = self._begin_request("action")
+        req.history = {"question": question, "app": self.action_app[1] if self.action_app else "", "ts": time.time()}
         self.action_policy = ApprovalPolicy(settings.get("act", "mode"))
         limits = settings.ACT_LIMITS[self.action_policy.mode]
         self.box.hide()
@@ -868,6 +904,7 @@ class Flippy:
         self.ui.action_card.hide()
         ended = result if not stopped else "it stopped before it finished"
         self._remember("task", getattr(self, "act_task", ""), ended)  # for what's asked next
+        self._save_history(req, "task", tools=tools, result=result, outcome="stopped" if stopped else "completed")
         if stopped:
             code = errors.ACT_REASONS.get(reason, "ACT-STOPPED")
             if error is not None and not tools.failure:  # the provider ended it: its own code
@@ -971,6 +1008,7 @@ class Flippy:
             self._stop_playback()
             shown, logged = errors.describe(err)
             log("error", logged)  # the code and the error's first line, never the question
+            self._save_history(owner, "ask", outcome="error", detail=shown)
             self._fail(shown, **fields)
             self._open_setup_if(setup_gate.login_error, err)
             return
@@ -990,6 +1028,7 @@ class Flippy:
                 self._fail(status)
             return
         event("answer", outcome="completed")
+        self._save_history(owner, "ask", raw=raw)
         answer = " ".join(seg.text for seg in segments(raw, True))
         last = getattr(self, "continued", False) and self._recent()
         if last and last["kind"] == "ask":  # a walkthrough going on after your click: the steps before it too
@@ -1523,7 +1562,7 @@ class Flippy:
 
     # --- settings ---
     def open_settings(self):
-        self.ui.open_settings(on_preview=self.preview, on_reset=self.reset_session)
+        self.ui.open_settings()
 
     def click_command(self, args):
         """Scripted clicks for demos and automation. Off unless turned on in Settings; Claude never triggers these."""

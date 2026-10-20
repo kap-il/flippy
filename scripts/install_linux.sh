@@ -11,7 +11,7 @@ say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 # 1. System packages.
 say "Installing system packages (sudo)"
 sudo apt-get install -y git python3-venv python3-gi python3-gi-cairo python3-cairo python3-dbus python3-pil \
-    gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-atspi-2.0 at-spi2-core \
+    gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-atspi-2.0 gir1.2-webkit-6.0 at-spi2-core \
     meson ninja-build libgtk-4-dev libwayland-dev gobject-introspection libgirepository1.0-dev
 
 # 2. gtk4-layer-shell (not packaged for Ubuntu/Pop!_OS 24.04), into ~/.local. Meson puts it in lib/<arch>/ on

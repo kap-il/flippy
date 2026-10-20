@@ -1,19 +1,24 @@
-"""Smooth (non-pixel) pointer drawings in the editor's model (flippy/pixelart.py): strokes, fill, switching
-styles, undo, and saving at the pixel grid's size with the tip on a grid cell."""
+"""Smooth (non-pixel) pointer drawings in the studio's model (flippy/pixelart.py): saved at the pixel grid's size
+with the tip on a grid cell, and reopened smooth."""
 import os
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import cairo
+
 from flippy import pointers
-from flippy.pixelart import CELL, GRID_H, GRID_W, RES, PixelArt
+from flippy.pixelart import GRID_H, RES, PixelArt, _blank_smooth
 
 
-def alpha_at(art, x, y):  # canvas px (the editor's) -> the smooth surface's alpha there
-    surf = art.smooth
-    surf.flush()
-    i = int(y * RES / CELL) * surf.get_stride() + int(x * RES / CELL) * 4
-    return surf.get_data()[i + 3]
+def smooth_art(x, y, w, h):
+    """A smooth drawing with one filled rectangle (smooth canvas px), as the studio's canvas would send it."""
+    art = PixelArt()
+    art.smooth = _blank_smooth()
+    cr = cairo.Context(art.smooth)
+    cr.rectangle(x, y, w, h)
+    cr.fill()
+    return art
 
 
 class Smooth(unittest.TestCase):
@@ -26,40 +31,8 @@ class Smooth(unittest.TestCase):
             self.addCleanup(p.stop)
         pointers._cache.clear()
 
-    def test_a_stroke_paints_and_right_click_erases(self):
-        art = PixelArt()
-        art.set_pixel(False)
-        art.stroke_to(40, 40, (1, 1, 1))
-        art.stroke_to(120, 40, (1, 1, 1))
-        art.end_stroke()
-        self.assertEqual(alpha_at(art, 80, 40), 255)
-        self.assertEqual(alpha_at(art, 80, 120), 0)
-        art.stroke_to(80, 40, None)
-        art.end_stroke()
-        self.assertEqual(alpha_at(art, 80, 40), 0)
-
-    def test_switching_keeps_the_drawing_and_undo_switches_back(self):
-        art = PixelArt()
-        art.start("hand")
-        filled = sum(c is not None for row in art.cells for c in row)
-        art.set_pixel(False)
-        self.assertFalse(art.pixel)
-        art.set_pixel(True)
-        self.assertEqual(sum(c is not None for row in art.cells for c in row), filled)
-        art.undo()
-        self.assertFalse(art.pixel)
-
-    def test_fill_covers_the_area(self):
-        art = PixelArt()
-        art.set_pixel(False)
-        art.fill_smooth(5, 5, (1, 0, 0))
-        self.assertEqual(alpha_at(art, GRID_W * CELL - 2, GRID_H * CELL - 2), 255)
-
     def test_saved_at_grid_size_with_the_tip_on_a_cell_and_reopens_smooth(self):
-        art = PixelArt()
-        art.set_pixel(False)
-        art.stroke_to(50, 50, (0, 0, 0))
-        art.end_stroke()
+        art = smooth_art(40, 40, 30, 30)
         art.hotspot = (3, 2)
         name = art.save("Doodle")
         m = pointers.meta(name)

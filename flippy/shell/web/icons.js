@@ -1,0 +1,27 @@
+// Line icons for the app window, drawn on a 20x20 grid at 1.5px. Inline so the page loads nothing remote.
+window.ICONS = {
+  history: '<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/>',
+  setup: '<path d="M4 10.5l3.5 3.5L16 5.5"/>',
+  gear: '<path d="M3.5 6h7M14.5 6h2M3.5 14h2M9.5 14h7"/><circle cx="12.5" cy="6" r="2"/><circle cx="7.5" cy="14" r="2"/>',
+  sun: '<circle cx="10" cy="10" r="3.2"/><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M4.7 15.3L6 14M14 6l1.3-1.3"/>',
+  sparkle: '<path d="M10 3c.6 3.4 2.6 5.4 6 6-3.4.6-5.4 2.6-6 6-.6-3.4-2.6-5.4-6-6 3.4-.6 5.4-2.6 6-6z"/>',
+  cursor: '<path d="M5 3.5l10 6-4.4 1.2L8.8 15z"/>',
+  keyboard: '<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M5.5 8h.01M8.5 8h.01M11.5 8h.01M14.5 8h.01M6.5 12h7"/>',
+  timer: '<circle cx="10" cy="11" r="6"/><path d="M10 11V8M8 2.5h4"/>',
+  lifebuoy: '<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><path d="M5 5l2.9 2.9M15 5l-2.9 2.9M5 15l2.9-2.9M15 15l-2.9-2.9"/>',
+  dots: '<path d="M5 10h.01M10 10h.01M15 10h.01"/>',
+  chevron: '<path d="M6 8l4 4 4-4"/>',
+  right: '<path d="M8 5l5 5-5 5"/>',
+  check: '<path d="M4.5 10.5l3.5 3.5 7.5-8"/>',
+  close: '<path d="M5 5l10 10M15 5L5 15"/>',
+  plus: '<path d="M10 4v12M4 10h12"/>',
+  image: '<rect x="3" y="4" width="14" height="12" rx="2"/><circle cx="7.5" cy="8.5" r="1.3"/><path d="M3.5 14.5l4-4 3 3 2-2 4 3.5"/>',
+  import: '<path d="M10 3v9M6.5 8.5L10 12l3.5-3.5M4 14.5v1A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5v-1"/>',
+  copy: '<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/>',
+  pencil: '<path d="M13.5 3.5l3 3L7 16H4v-3z"/>',
+  trash: '<path d="M4 6h12M8 6V4h4v2M5.5 6l.8 10h7.4l.8-10"/>',
+  rename: '<path d="M3 15h4M11 4l5 5-7 7H4v-5z"/>',
+  export: '<path d="M10 13V4M6.5 7.5L10 4l3.5 3.5M4 14.5v1A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5v-1"/>',
+  play: '<path d="M6.5 4.5v11l9-5.5z"/>',
+};
+window.icon = (name, cls) => `<svg viewBox="0 0 20 20" aria-hidden="true"${cls ? ` class="${cls}"` : ""}>${window.ICONS[name] || ""}</svg>`;

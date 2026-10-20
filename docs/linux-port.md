@@ -22,15 +22,15 @@ glass (`ext_background_effect_v1`); on an older COSMIC those two switch off and 
 | Update card | yes | [Cards](#the-cards) |
 | Panel icon showing your pointer, with the menu | yes | [Panel icon](#panel-icon) |
 | Esc cancels draw mode | yes | [Esc](#esc-cancels-draw-mode) |
-| Settings rows (help mode, watched apps, wait for clicks, updates) | yes | `flippy/linux/settings_window.py` |
-| First-run setup window | yes | [Setup](#first-run-setup) |
+| Settings rows (help mode, watched apps, wait for clicks, updates) | yes, in the app window | `flippy/linux/shell_window.py`, `flippy/shell/` |
+| First-run setup | yes, the app window's Setup page | [Setup](#first-run-setup) |
 | Flippy.app (icon, open at login) | app library entry + icon, XDG autostart | `flippy/linux/desktop.py` |
 | Pause / resume shortcut | a COSMIC shortcut, not a double-tap | [Pause](#pause-shortcut) |
 | Demo tools `shot`, `nudge`, `demo-nudge`, `demo-tip`, `demo-update` | yes | |
 | Scripted typing (`type`, `key`, `tap`) | yes | [Typing](#scripted-typing) |
 | `/act` desktop tasks | yes, through AT-SPI; keys and clicks by position borrow the window | [Desktop tasks](#desktop-tasks-act) |
 | Codex / ChatGPT, the usage guard, error codes | yes | shared (`flippy/codex_provider.py`) |
-| The new look (setup, settings, Draw editor), Mono | yes | `flippy/linux/style.py` |
+| The app window (history, setup, settings, pointer studio) | yes, WebKitGTK 6 | `flippy/linux/shell_window.py` |
 | Scripted mouse (`click`, `move`, `path`) | yes, through the RemoteDesktop portal (asks once) | [Pointer](#the-pointer) |
 | Real Liquid Glass (Media Player, Glass, lens, glass hand), `look.glass_tint`, `look.glass_color`, `look.player_shine` | yes: the compositor's blur, Flippy's tint | [Glass](#real-glass) |
 | `record` (demo screen recording) | yes | [Recording](#demo-recording) |
@@ -117,8 +117,8 @@ just like the question box. COSMIC's active-window outline shows as a 2-px speck
 
 ## First-run setup
 
-`flippy-ask setup` (or the panel menu → Setup…) opens `flippy/linux/setup_window.py`, in
-the same design as macOS. Two steps, no permissions:
+`flippy-ask setup` (or the panel menu → Setup…) opens the app window on Setup
+(`flippy/linux/shell_window.py`; the checks and actions are in `flippy/linux/setup.py`), the same page as macOS. Two steps, no permissions:
 
 1. **Connect:** Claude (**Log in…** opens a terminal running `claude`) and ChatGPT through
    Codex (**Sign in…** opens a terminal running `codex login`, with node on its PATH, and

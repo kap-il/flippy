@@ -420,6 +420,21 @@ class AskThenActAndBack(unittest.TestCase):
         self.assertIn('I asked Flippy: "how do I export a PDF?"', context)
         self.assertTrue(context.endswith("The task: "))
 
+    def test_finished_answer_saves_history_and_keeps_follow_up_context(self):
+        f = flippy()
+        f._run_request, f._ask = MagicMock(), MagicMock()
+        req = Request(7, "tutor")
+        f._begin_request = lambda mode: req
+        f._owns = lambda owner: owner is req
+        with patch.object(daemon.history_store, "add") as save:
+            f.submit("how do I export a PDF?")
+            f._on_answer(("Open File [POINT:1,2:File].", 7), None, req)
+        self.assertEqual(save.call_args.args[:3], ("ask", "how do I export a PDF?", "Open File."))
+        self.assertIsNone(req.history)
+        self.assertEqual(f.last_exchange["question"], "how do I export a PDF?")
+        self.assertEqual(f.last_exchange["answer"], "Open File.")
+        self.assertIn("how do I export a PDF?", f._task_context())
+
     def test_a_task_after_a_task_knows_how_it_ended(self):
         f = flippy()
         f._remember("task", "play some jazz", "Playing Kind of Blue.")

@@ -242,7 +242,7 @@ class OverlayBase:
         r, g, b = self.theme.pen
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        for width, alpha in ((12, 0.25), (5, 1.0)):  # soft glow, then the solid line
+        for width, alpha in ((8, 0.25), (3, 1.0)):  # soft glow, then the solid line (thinner since #37)
             cr.set_line_width(width)
             cr.set_source_rgba(r, g, b, alpha)
             for stroke in self.strokes:

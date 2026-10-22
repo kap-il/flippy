@@ -107,7 +107,7 @@ def pin_glyph(cr, cx, cy, s, rgba, pinned):
 THOUGHT_FONT = "Noto Sans"
 
 
-THOUGHT_LINES = 8   # open, the section shows at most this many lines: the latest of a long trail
+THOUGHT_LINES = 4   # open, the section shows at most this many lines: the latest of a long trail (8 before #37)
 FOLDED_CHARS = 200  # folded, one line never shows more than this
 
 

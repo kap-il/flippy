@@ -259,7 +259,8 @@ class TestActionSession(unittest.IsolatedAsyncioTestCase):
     async def test_action_options_preserve_model_and_keep_tutor_tool_free(self):
         brain, options, result = await self.run_session(FakeDesktop().tools())
         self.assertEqual(result, "done")
-        self.assertEqual((options.model, options.effort), (brain.options.model, brain.options.effort))
+        from flippy import settings
+        self.assertEqual((options.model, options.effort), (brain.options.model, settings.get("act", "effort")))
         self.assertEqual(options.tools, [])
         self.assertEqual(options.setting_sources, [])
         self.assertTrue(options.strict_mcp_config)

@@ -142,8 +142,10 @@ class Brain:
         """
         from .actions import PROMPT, TOOL_CATALOG
         names = list(desktop.catalog()) if hasattr(desktop, "catalog") else list(TOOL_CATALOG)
-        # Tasks need planning: at least medium effort, even when quick answers run at low.
-        effort = self.options.effort if self.options.effort in ("high", "max") else "medium"
+        # Their own setting (act.effort, low by default): a task waits on Claude at every step, and medium took about
+        # twice as long per step as low (3 s, not 1.6 s, in a Calculator task). FLIPPY_EFFORT still overrides.
+        from . import settings
+        effort = ENV_EFFORT or settings.get("act", "effort")
         opts = replace(self.options, system_prompt=getattr(desktop, "prompt", PROMPT), effort=effort,
                        max_turns=getattr(desktop, "max_turns", 16),
                        include_partial_messages=False, mcp_servers={"desktop": desktop.server()},

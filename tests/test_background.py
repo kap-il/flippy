@@ -164,10 +164,10 @@ class StopAndWording(unittest.TestCase):
         f = SimpleNamespace(ui=SimpleNamespace(key_label=lambda name: None if name == "pause" else "⇧⌘Space"))
         self.assertEqual(daemon.Flippy._stop_hint(f), "Shift Cmd Space")  # pause off: the ask hotkey
 
-    def test_tasks_run_at_medium_effort_or_more(self):
+    def test_tasks_run_at_their_own_effort_setting(self):
         import asyncio
         from unittest.mock import patch
-        from flippy import brain
+        from flippy import brain, settings
         seen = {}
 
         class Client:
@@ -181,11 +181,12 @@ class StopAndWording(unittest.TestCase):
                 return False
         b = brain.Brain()
         tools = DesktopTools(None, None, None, catalog=BACKGROUND_CATALOG, prompt=BACKGROUND_PROMPT)
-        for setting, expected in (("low", "medium"), ("medium", "medium"), ("high", "high"), ("max", "max")):
-            b.options.effort = setting
-            with patch.object(brain, "ClaudeSDKClient", Client), self.assertRaises(RuntimeError):
+        b.options.effort = "high"  # the answers' effort doesn't apply
+        for setting in ("low", "medium", "high", "max"):
+            with patch.object(settings, "_data", {**settings._data, "act": {**settings._data["act"], "effort": setting}}), \
+                    patch.object(brain, "ClaudeSDKClient", Client), self.assertRaises(RuntimeError):
                 asyncio.run(b.act("x", tools))
-            self.assertEqual(seen["effort"], expected, setting)
+            self.assertEqual(seen["effort"], setting)
 
 
 class StopFreesFlippy(unittest.TestCase):

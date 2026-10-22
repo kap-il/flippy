@@ -70,6 +70,11 @@ def lean_controls(card, opts):
             and card.phase != "thinking" and not card.error)
 
 
+def compact(opts):
+    """The card is the question box's width (macOS, #37): every theme fits its text and controls in it."""
+    return bool(opts and opts.get("card_w"))
+
+
 def pin_shown(card):
     """Answers get a pushpin; "thinking…", errors and notices don't."""
     return card.controls and card.phase != "thinking" and not card.error
@@ -589,10 +594,15 @@ class Theme:
     tap = (1.0, 0.25, 0.2)
     pen = (1.0, 0.25, 0.2)
     placeholder = "ask about your screen…"
-    widths = (360, 520)  # card width: riding next to the pointer, elsewhere
+    widths = (360, 520)  # card width: riding next to the pointer, elsewhere (where the platform doesn't set card_w)
+    pad_w = 0         # how much wider the card is than _w (themes that lay text out at _w and pad it)
     backdrop = None   # {"radius": r}: wants a real blurred-glass backdrop behind the card where the platform has one
 
-    def _w(self, card):
+    def _w(self, card, opts=None):
+        """The width the theme lays the card out at: the platform's card_w (macOS: the question box's, about 1.5
+        inches, #37) less the theme's padding, else its own widths."""
+        if opts and opts.get("card_w"):
+            return opts["card_w"] - self.pad_w
         return self.widths[0] if card.follow else self.widths[1]
 
     # A desktop task's card (Card.task) has no player controls, and its thinking section sits at the bottom of the
@@ -605,7 +615,7 @@ class Theme:
     def card_size(self, card, opts):
         w, h = self.size(card, opts)
         if card.task and card.thought:  # a theme that fits its card to the text ("Done.") still leaves room to read
-            w = max(w, self._w(card))
+            w = max(w, self._w(card, opts))
         if card.actions:
             w = max(w, self.actions_width(card, opts) + 2 * self.thought_inset)
         return w, h + self.thought_space(card, w, opts) + self.action_space(card, opts)
@@ -718,12 +728,16 @@ class Midnight(Theme):
     err = (1.0, 0.54, 0.5)
     font = "Noto Sans"
     radius = 14
+    pad_w = 32  # 16 each side of the text (size)
 
     def _layouts(self, cr, card, opts):
-        body = layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card))
+        room = PIN_ROOM if compact(opts) and pin_shown(card) else 0  # narrow: the pushpin's room comes off the text
+        body = layout(cr, card.text or " ", self.font, opts["text_size"],
+                      width=self._w(card, opts) - (0 if card.header else room))
         head = None
         if card.header:  # one line, at most as wide as the text can be: a long step ends in "…"
-            head = layout(cr, card.header, self.font, opts["text_size"] - 2, width=self._w(card), bold=True)
+            head = layout(cr, card.header, self.font, opts["text_size"] - 2, width=self._w(card, opts) - room,
+                          bold=True)
             ellipsize_end(head)
         return body, head
 
@@ -734,11 +748,13 @@ class Midnight(Theme):
         body, head = self._layouts(_measure_ctx, card, opts)
         bw, bh = lsize(body)
         hh = lsize(head)[1] + 3 if head else 0
-        w, h = max(bw, lsize(head)[0] if head else 0) + 32, bh + hh + 24
+        w, h = max(bw, lsize(head)[0] if head else 0) + self.pad_w, bh + hh + 24
         if pin_shown(card):
             w += PIN_ROOM
         if lean_controls(card, opts):
             w, h = max(w, self.CTRL_MIN_W), h + self.CTRL_H
+        if compact(opts):
+            w = opts["card_w"]
         return w, h
 
     @property
@@ -767,7 +783,8 @@ class Midnight(Theme):
     def _mgeom(self, x, y, w, h, card):
         cy = y + h - self.CTRL_H / 2 - 4
         px0 = x + w - 16 - 122
-        return {"cy": cy, "n": len(card.steps), "dot0": x + 22,
+        n = len(card.steps)
+        return {"cy": cy, "n": n if x + 22 + (n - 1) * 14 + 5 <= px0 - 12 else 0, "dot0": x + 22,  # dots if they fit
                 "prev": (px0 + 14, cy), "toggle": (px0 + 42, cy), "next": (px0 + 70, cy),
                 "chip": (px0 + 86, cy - 10, 36, 20)}
 
@@ -888,9 +905,10 @@ class Cosmic(Midnight):
     def _cgeom(self, x, y, w, h):
         row = y + h - self.CTRL_H - 2
         ox, cy = x + w / 2, row + 46
+        gap, chip = (48, (x + 16, cy - 12, 42, 24)) if w >= 260 else (36, (x + 10, cy - 12, 30, 24))  # narrow (#37)
         return {"row": row, "cy": cy, "x0": x + 18, "x1": x + w - 18,
-                "prev": (ox - 48, cy), "toggle": (ox, cy), "next": (ox + 48, cy),
-                "chip": (x + 16, cy - 12, 42, 24), "close": (x + w - 16 - 24, cy - 12, 24, 24)}
+                "prev": (ox - gap, cy), "toggle": (ox, cy), "next": (ox + gap, cy),
+                "chip": chip, "close": (x + w - 16 - 24, cy - 12, 24, 24)}
 
     def _draw_controls(self, cr, x, y, w, h, card, opts):
         G = self._cgeom(x, y, w, h)
@@ -973,23 +991,28 @@ class Terminal(Theme):
     font = "Fira Mono"
     placeholder = "$ ask "
     widths = (380, 540)
+    pad_w = 28  # 14 each side of the text (size)
+    R = 10      # softened corners, like the question box's (#37)
 
     def _layouts(self, cr, card, opts):
         px = opts["text_size"] - 1
         cursor = "█" if (card.typing or card.phase == "thinking") else ""
-        body = layout(cr, (card.text or "") + cursor, self.font, px, width=self._w(card))
+        body = layout(cr, (card.text or "") + cursor, self.font, px, width=self._w(card, opts))
         head = None
         if card.header:  # one line, at most as wide as the text can be: a long step ends in "…"
-            head = layout(cr, f"> {card.header}", self.font, px, width=self._w(card), bold=True)
+            head = layout(cr, f"> {card.header}", self.font, px, width=self._w(card, opts), bold=True)
             ellipsize_end(head)
         bar = layout(cr, PROMPT, self.font, px - 3)
         return body, head, bar
 
     BAR_CHARS = 12
 
-    def _status(self, card):
+    def _status(self, card, opts=None):
         """[(name or None, text, inverse)] tokens of the status line."""
         n = max(len(card.steps), 1)
+        if compact(opts):  # narrow: no gaps, no bar
+            return [("prev", "[<<]"), ("toggle", "[||]" if playing(card) else "[|>]"), ("next", "[>>]"),
+                    ("close", "[x]"), (None, " "), ("speed_cycle", f"{card.speed:g}x"), (None, f" {card.step + 1}/{n}")]
         fill = round(max(0.0, min(card.progress, 1.0)) * self.BAR_CHARS)
         return [("prev", "[<<]"), (None, " "), ("toggle", "[||]" if playing(card) else "[|>]"), (None, " "),
                 ("next", "[>>]"), (None, " "), ("close", "[x]"), (None, "  "),
@@ -998,9 +1021,9 @@ class Terminal(Theme):
 
     def _status_layout(self, cr, card, opts, x, y):
         """Token layouts with their positions: [(name, layout, x, w, h)]."""
-        px = opts["text_size"] - 2
+        px = opts["text_size"] - (4 if compact(opts) else 2)
         out, cx = [], x
-        for name, text in self._status(card):
+        for name, text in self._status(card, opts):
             lay = layout(cr, text, self.font, px)
             tw, th = lsize(lay)
             out.append((name, lay, cx, tw, th))
@@ -1011,11 +1034,13 @@ class Terminal(Theme):
         body, head, bar = self._layouts(_measure_ctx, card, opts)
         bw, bh = lsize(body)
         hw, hh = (lsize(head)[0], lsize(head)[1] + 4) if head else (0, 0)
-        w, h = max(bw, hw, 200) + 28, bh + hh + lsize(bar)[1] + 30
+        w, h = max(bw, hw, min(200, self._w(card, opts))) + self.pad_w, bh + hh + lsize(bar)[1] + 30
         if lean_controls(card, opts):
             toks = self._status_layout(_measure_ctx, card, opts, 0, 0)
             w = max(w, toks[-1][2] + toks[-1][3] + 28)
             h += toks[0][4] + 12
+        if compact(opts):
+            w = opts["card_w"]
         return w, h
 
     pin_rgba = (0.25, 1.0, 0.45, 1)
@@ -1044,6 +1069,9 @@ class Terminal(Theme):
 
     def draw(self, cr, x, y, w, h, card, t, opts):
         body, head, bar = self._layouts(cr, card, opts)
+        cr.save()
+        round_rect(cr, x, y, w, h, self.R)
+        cr.clip()  # the status bar follows the rounded top
         cr.rectangle(x, y, w, h)
         cr.set_source_rgba(0.01, 0.03, 0.02, opts["card_opacity"])
         cr.fill()
@@ -1051,8 +1079,9 @@ class Terminal(Theme):
         cr.rectangle(x, y, w, bh)
         cr.set_source_rgba(0.05, 0.15, 0.08, 1)
         cr.fill()
+        cr.restore()
         show(cr, bar, x + 10, y + 3, (*self.dim, 1))
-        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
+        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
         cr.set_source_rgba(*self.green, 0.6)
         cr.set_line_width(1)
         cr.stroke()
@@ -1062,7 +1091,7 @@ class Terminal(Theme):
             ty += lsize(head)[1] + 4
         blink = (card.typing or card.phase == "thinking") and int(t * 2.5) % 2
         if blink:  # hide the block cursor every other beat
-            body = layout(cr, card.text or " ", self.font, opts["text_size"] - 1, width=self._w(card))
+            body = layout(cr, card.text or " ", self.font, opts["text_size"] - 1, width=self._w(card, opts))
         show(cr, body, x + 14, ty, (1.0, 0.45, 0.4, 1) if card.error else (*self.green, 1))
         if lean_controls(card, opts):
             sy = self._status_y(card, opts, y, h)
@@ -1112,7 +1141,7 @@ class MediaPlayer(Theme):
         return x + w - 9 - 3 * 22 - 13, y + 12.5
 
     def _body(self, cr, card, opts):
-        return layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card) - 44)
+        return layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card, opts) - 44)
 
     def _geom(self, x, y, w, h):
         cy = y + h - self.CTRL_H / 2 - 2
@@ -1146,8 +1175,8 @@ class MediaPlayer(Theme):
     def size(self, card, opts):
         _, bh = lsize(self._body(_measure_ctx, card, opts))
         if card.phase == "thinking" or card.task:  # the title bar and the text: no controls
-            return self._w(card), self.TITLE_H + bh + 30
-        return self._w(card), self.TITLE_H + bh + 26 + self.CTRL_H + 8
+            return self._w(card, opts), self.TITLE_H + bh + 30
+        return self._w(card, opts), self.TITLE_H + bh + 26 + self.CTRL_H + 8
 
     def controls_height(self, card, opts):
         return 0 if card.phase == "thinking" or card.task else self.CTRL_H + 12
@@ -1480,7 +1509,7 @@ class Glass(Theme):
         return card.header or ("Something went wrong" if card.error else "Flippy")
 
     def _layouts(self, cr, card, opts):
-        w = self._w(card) - 2 * self.PAD
+        w = self._w(card, opts) - 2 * self.PAD
         title = self._title(card)
         head = layout(cr, title, self.font, opts["text_size"], width=w - (PIN_ROOM if pin_shown(card) else 0),
                       bold=True) if title else None
@@ -1492,11 +1521,11 @@ class Glass(Theme):
     def size(self, card, opts):
         head, body = self._layouts(_measure_ctx, card, opts)
         if card.phase == "thinking":  # just the glass and the text: no title or controls yet
-            return self._w(card), self.PAD + lsize(body)[1] + self.PAD
+            return self._w(card, opts), self.PAD + lsize(body)[1] + self.PAD
         if card.task:  # the step or nothing, and the text: no player controls
-            return self._w(card), self.PAD + (lsize(head)[1] + 3 if head else 0) + lsize(body)[1] + self.PAD
+            return self._w(card, opts), self.PAD + (lsize(head)[1] + 3 if head else 0) + lsize(body)[1] + self.PAD
         h = self.PAD + lsize(head)[1] + 3 + lsize(body)[1] + 14 + self.BAR_H + 8 + self.CTRL_H + 12
-        return self._w(card), h
+        return self._w(card, opts), h
 
     def controls_height(self, card, opts):
         return 0 if card.phase == "thinking" or card.task else 12 + self.CTRL_H + 8 + self.BAR_H + 4
@@ -1507,8 +1536,10 @@ class Glass(Theme):
     def _geom(self, x, y, w, h):
         cy = y + h - 12 - self.CTRL_H / 2
         by = cy - self.CTRL_H / 2 - 8 - self.BAR_H / 2
+        narrow = w < 260  # (#37) the transport alone: no room for the speed and close buttons beside it
         return {"cy": cy, "ox": x + w / 2, "by": by, "bx0": x + self.PAD + 46, "bx1": x + w - self.PAD - 46,
-                "speed": (x + self.PAD + self.BTN / 2, cy), "close": (x + w - self.PAD - self.BTN / 2, cy)}
+                "speed": None if narrow else (x + self.PAD + self.BTN / 2, cy),
+                "close": None if narrow else (x + w - self.PAD - self.BTN / 2, cy)}
 
     def hit_regions(self, card, x, y, w, h, opts=None):
         if card.phase == "thinking" or card.task:
@@ -1518,8 +1549,9 @@ class Glass(Theme):
         hits = {"prev": (ox - 78, cy - 20, 40, 40), "toggle": (ox - 22, cy - 22, 44, 44), "next": (ox + 38, cy - 20, 40, 40),
                 "seek": (G["bx0"] - 4, G["by"] - 8, G["bx1"] - G["bx0"] + 8, 16)}
         for name in ("speed", "close"):
-            bx, by = G[name]
-            hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
+            if G[name]:
+                bx, by = G[name]
+                hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
         return hits
 
     @staticmethod
@@ -1601,14 +1633,16 @@ class Glass(Theme):
             glyph(cr, name, gx, cy, 8, (1, 1, 1, 1.0 if pressed == name else 0.85))
         glyph(cr, "pause" if playing(card) else "play", ox, cy, 12, (1, 1, 1, 1.0 if pressed != "toggle" else 0.7))
         # round glass buttons: speed (left), close (right)
-        sx, sy = G["speed"]
-        self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
-        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-        sw, sh = lsize(sl)
-        show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
-        cx_, cy_ = G["close"]
-        self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
-        glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
+        if G["speed"]:
+            sx, sy = G["speed"]
+            self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
+            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+            sw, sh = lsize(sl)
+            show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
+        if G["close"]:
+            cx_, cy_ = G["close"]
+            self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
+            glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
 
     def box_css(self):
         return """
@@ -1635,10 +1669,11 @@ class Mono(Theme):
     err = (1.0, 0.55, 0.5)
     font = "Noto Sans"
     P, BTN, ROW = 16, 26, 30
+    R = 10  # softened corners, like the question box's (#37)
     widths = (360, 480)
 
     def _layouts(self, cr, card, opts):
-        w = self._w(card) - 2 * self.P
+        w = self._w(card, opts) - 2 * self.P
         room = PIN_ROOM if pin_shown(card) else 0  # the top line runs beside the pin
         head = layout(cr, card.header, self.font, opts["text_size"] - 1, width=w - room, bold=True) if card.header else None
         body = layout(cr, card.text or " ", self.font, opts["text_size"], width=w if head else w - room)
@@ -1654,19 +1689,25 @@ class Mono(Theme):
         h = self.P + (lsize(head)[1] + 4 if head else 0) + lsize(body)[1] + self.P
         if lean_controls(card, opts):
             h += 2 * self.ROW + 6
-        return self._w(card), h
+        return self._w(card, opts), h
 
     def _geom(self, x, y, w, h):
         P, B = self.P, self.BTN
         r2 = y + h - P / 2 - self.ROW / 2 - 2   # buttons and speed
         r1 = r2 - self.ROW                      # seek
         close_x = x + w - P - B
-        return {"r1": r1, "r2": r2, "count": (x + P, r1),
-                "seek": (x + P + 52, r1, w - 2 * P - 52),
-                "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
-                "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
-                "speed": (close_x - 14 - 110, r2, 110),
-                "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
+        G = {"r1": r1, "r2": r2, "count": (x + P, r1),
+             "seek": (x + P + 52, r1, w - 2 * P - 52),
+             "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
+             "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
+             "speed": (close_x - 14 - 110, r2, 110),
+             "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
+        gap_x = x + P + 3 * B + 12 + 6  # after next
+        if G["speed_cycle"][0] < gap_x:  # narrow (#37): no speed slider; the button between next and close, if it fits
+            G["speed"], cw = None, 34
+            G["speed_cycle"] = (gap_x + (close_x - 6 - gap_x - cw) / 2, r2 - B / 2, cw, B) \
+                if close_x - 6 - gap_x >= cw else None
+        return G
 
     def hit_regions(self, card, x, y, w, h, opts=None):
         if not lean_controls(card, opts or {}):
@@ -1675,9 +1716,11 @@ class Mono(Theme):
         hits = {name: (*G[name], B, B) for name in ("prev", "toggle", "next", "close")}
         sx, sy, sw = G["seek"]
         hits["seek"] = (sx, sy - 9, sw, 18)
-        vx, vy, vw = G["speed"]
-        hits["speed"] = (vx, vy - 9, vw, 18)
-        hits["speed_cycle"] = G["speed_cycle"]
+        if G["speed"]:
+            vx, vy, vw = G["speed"]
+            hits["speed"] = (vx, vy - 9, vw, 18)
+        if G["speed_cycle"]:
+            hits["speed_cycle"] = G["speed_cycle"]
         return hits
 
     def _slider(self, cr, x, cy, w, frac, pressed):
@@ -1716,7 +1759,7 @@ class Mono(Theme):
         glyph(cr, name, bx + B / 2, by + B / 2, 5 if name != "close" else 4.5, (*self.fg, 1))
 
     def draw(self, cr, x, y, w, h, card, t, opts):
-        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
+        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
         cr.set_source_rgba(*self.bg, opts["card_opacity"])
         cr.fill_preserve()
         cr.set_source_rgba(*self.outline, 1)
@@ -1744,12 +1787,14 @@ class Mono(Theme):
         for name in ("prev", "toggle", "next", "close"):
             g = name if name != "toggle" else ("pause" if playing(card) else "play")
             self._button(cr, *G[name], g, pressed == name)
-        vx, vy, vw = G["speed"]
-        bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
-        self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
-        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-        show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
-        self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
+        if G["speed_cycle"]:
+            bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
+            self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
+            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+            show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
+        if G["speed"]:
+            vx, vy, vw = G["speed"]
+            self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
 
     def box_css(self):
         return """

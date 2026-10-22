@@ -356,7 +356,7 @@ class Overlay(OverlayBase):
 
 def box_style(theme):
     """The question box's look per theme (the macOS counterpart of Theme.box_css). Small type for a small box, and
-    no square corners: the sharp themes (Mono, Terminal) get a softer radius here (#37)."""
+    no square corners except Terminal's: Mono gets a softer radius here (#37)."""
     st = {"bg": _rgba(24 / 255, 24 / 255, 28 / 255, 0.94), "border": _rgba(90 / 255, 160 / 255, 1, 0.55),
           "border_w": 1, "radius": 14, "fg": _hex("f2f2f2"), "font": (None, 14), "field_bg": None,
           "field_border": None, "field_radius": 0, "hint": _rgba(1, 1, 1, 0.5), "hint_font": (None, 10)}
@@ -368,9 +368,9 @@ def box_style(theme):
         st.update(bg=_rgba(*theme.bg, 0.96), border=_rgba(*theme.accent, 0.7), radius=theme.radius,
                   fg=_rgba(*theme.fg), hint=_rgba(*theme.fg, 0.5))
     elif theme.key == "terminal":
-        green = (64 / 255, 1, 115 / 255)
-        st.update(bg=_hex("030805"), border=_rgba(*green, 0.6), radius=10, fg=_rgba(*green), font=("Menlo", 13),
-                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), field_radius=6, hint=_rgba(*green, 0.55),
+        green = themes.TERMINAL_GREEN
+        st.update(bg=_hex("080802"), border=_rgba(*green, 0.6), radius=0, fg=_rgba(*green), font=("Menlo", 13),
+                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), hint=_rgba(*green, 0.55),
                   hint_font=("Menlo", 9))
     elif theme.key == "mediaplayer" and GLASS:  # Liquid Glass box; the field is a frostier, smokier pane
         st.update(glass=True, bg=None, border=_rgba(1, 1, 1, 0.35), radius=theme.LIQUID_R, fg=_hex("ffffff"),

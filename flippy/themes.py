@@ -1028,23 +1028,21 @@ window.flippy-box entry {{ font-size: 16px; }}
 window.flippy-box .flippy-hint {{ color: {css(self.fg, 0.5)}; font-size: 12px; }}"""
 
 
+TERMINAL_GREEN = (0.55, 0.93, 0.42)  # #8ced6b: a softer, yellower phosphor green (was #40ff73); the macOS box uses it
+
+
 class Terminal(Theme):
     key, name = "terminal", "Terminal"
-    thought_inset, thought_label, thought_text = 14, (0.25, 1.0, 0.45), (0.25, 1.0, 0.45, 0.7)
+    thought_inset, thought_label, thought_text = 14, TERMINAL_GREEN, (*TERMINAL_GREEN, 0.7)
     pointer = "arrow"
     hand_fill = (0.0, 0.0, 0.0)
-    hand_outline = (0.2, 1.0, 0.4)
-    accent = (0.2, 1.0, 0.4)
-    tap = (0.2, 1.0, 0.4)
-    pen = (0.2, 1.0, 0.4)
-    green = (0.25, 1.0, 0.45)
+    hand_outline = accent = tap = pen = green = TERMINAL_GREEN
     slim_controls = True  # its status line, [<<][||][>>][x] 1x 1/3, is slimmer than the shared row
-    dim = (0.15, 0.6, 0.3)
+    dim = (0.34, 0.57, 0.26)
     font = "Fira Mono"
     placeholder = "$ ask "
     widths = (380, 540)
     pad_w = 28  # 14 each side of the text (size)
-    R = 10      # softened corners, like the question box's (#37)
 
     def _layouts(self, cr, card, opts):
         px = opts["text_size"] - 1
@@ -1095,7 +1093,7 @@ class Terminal(Theme):
             w = opts["card_w"]
         return w, h
 
-    pin_rgba = (0.25, 1.0, 0.45, 1)
+    pin_rgba = (*TERMINAL_GREEN, 1)
     pin_size = 6
 
     def _bar_h(self, opts):
@@ -1121,19 +1119,15 @@ class Terminal(Theme):
 
     def draw(self, cr, x, y, w, h, card, t, opts):
         body, head, bar = self._layouts(cr, card, opts)
-        cr.save()
-        round_rect(cr, x, y, w, h, self.R)
-        cr.clip()  # the status bar follows the rounded top
         cr.rectangle(x, y, w, h)
-        cr.set_source_rgba(0.01, 0.03, 0.02, opts["card_opacity"])
+        cr.set_source_rgba(0.03, 0.03, 0.01, opts["card_opacity"])
         cr.fill()
         bh = lsize(bar)[1] + 6
         cr.rectangle(x, y, w, bh)
-        cr.set_source_rgba(0.05, 0.15, 0.08, 1)
+        cr.set_source_rgba(0.10, 0.14, 0.06, 1)
         cr.fill()
-        cr.restore()
         show(cr, bar, x + 10, y + 3, (*self.dim, 1))
-        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
+        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
         cr.set_source_rgba(*self.green, 0.6)
         cr.set_line_width(1)
         cr.stroke()
@@ -1157,16 +1151,16 @@ class Terminal(Theme):
                     cr.rectangle(tx, sy - 1, tw, th + 2)
                     cr.set_source_rgba(*self.green, 1)
                     cr.fill()
-                color = (0.0, 0.05, 0.02, 1) if inverse else ((*self.green, 1) if name else (*self.dim, 1))
+                color = (0.03, 0.04, 0.01, 1) if inverse else ((*self.green, 1) if name else (*self.dim, 1))
                 show(cr, lay, tx, sy, color)
 
     def box_css(self):
         return """
-window.flippy-box .flippy-card { background: #030805; border: 1px solid rgba(64,255,115,0.6); border-radius: 0;
-  padding: 10px 14px; color: #40ff73; font-family: "Fira Mono", monospace; }
-window.flippy-box entry { background: #000; color: #40ff73; caret-color: #40ff73; border-radius: 0;
-  font-family: "Fira Mono", monospace; font-size: 16px; border: 1px solid rgba(64,255,115,0.35); }
-window.flippy-box .flippy-hint { color: rgba(64,255,115,0.55); font-size: 12px; font-family: "Fira Mono", monospace; }"""
+window.flippy-box .flippy-card { background: #080802; border: 1px solid rgba(140,237,107,0.6); border-radius: 0;
+  padding: 10px 14px; color: #8ced6b; font-family: "Fira Mono", monospace; }
+window.flippy-box entry { background: #000; color: #8ced6b; caret-color: #8ced6b; border-radius: 0;
+  font-family: "Fira Mono", monospace; font-size: 16px; border: 1px solid rgba(140,237,107,0.35); }
+window.flippy-box .flippy-hint { color: rgba(140,237,107,0.55); font-size: 12px; font-family: "Fira Mono", monospace; }"""
 
 
 # ---- Media Player (2000s media player mini mode: dark teal glass, glossy orb) -----

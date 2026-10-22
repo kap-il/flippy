@@ -1,6 +1,7 @@
 """Claude via the Agent SDK on the Pro/Max subscription. Tutor answers and opt-in desktop tasks."""
 import asyncio
 import os
+import time
 from dataclasses import replace
 
 from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, RateLimitEvent, ResultMessage, StreamEvent,
@@ -142,14 +143,21 @@ class Brain:
         """
         from .actions import PROMPT, TOOL_CATALOG
         names = list(desktop.catalog()) if hasattr(desktop, "catalog") else list(TOOL_CATALOG)
-        # Tasks need planning: at least medium effort, even when quick answers run at low.
-        effort = self.options.effort if self.options.effort in ("high", "max") else "medium"
+        # Their own setting (act.effort, low by default): a task waits on Claude at every step, and medium took about
+        # twice as long per step as low (3 s, not 1.6 s, in a Calculator task). FLIPPY_EFFORT still overrides.
+        from . import settings
+        effort = ENV_EFFORT or settings.get("act", "effort")
         opts = replace(self.options, system_prompt=getattr(desktop, "prompt", PROMPT), effort=effort,
                        max_turns=getattr(desktop, "max_turns", 16),
                        include_partial_messages=False, mcp_servers={"desktop": desktop.server()},
                        allowed_tools=[f"mcp__desktop__{name}" for name in names])
+        if effort == "low":  # no thinking before each step: up to 6 s for a one-line reply with it, about 1.5 s without
+            opts = replace(opts, thinking={"type": "disabled"})
         GUARDS["claude"].check()
+        log = getattr(desktop, "log", None) or (lambda line: None)  # timings only, never content
+        began = time.monotonic()
         async with ClaudeSDKClient(options=opts) as client:
+            log(f"act: session started in {time.monotonic() - began:.1f}s")
             await client.query(question)
             text = ""
             completed = False
@@ -168,11 +176,16 @@ class Brain:
                         raise BrainError(msg.result or "Desktop task did not finish.", kind="incomplete")
                     text = msg.result or text
                     completed = True
-            if desktop.cancel.is_set():
-                return f"Task stopped: {desktop.failure or 'canceled'}. Check the screen before continuing."
-            if not completed:
-                raise BrainError("Desktop task ended without a completed response.", kind="incomplete")
-            return text.strip() or "Task finished without a final answer; check the screen."
+                    last = getattr(desktop, "_returned", None)
+                    if last:
+                        log(f"act: final reply in {time.monotonic() - last:.1f}s")
+            closing = time.monotonic()
+        log(f"act: session closed in {time.monotonic() - closing:.1f}s")
+        if desktop.cancel.is_set():
+            return f"Task stopped: {desktop.failure or 'canceled'}. Check the screen before continuing."
+        if not completed:
+            raise BrainError("Desktop task ended without a completed response.", kind="incomplete")
+        return text.strip() or "Task finished without a final answer; check the screen."
 
     async def write_tips(self, app_name: str, goal: str, n: int, skip: list[str]) -> list[dict]:
         """One text-only call, outside the conversation: n tips for app_name. skip: tips they already have."""

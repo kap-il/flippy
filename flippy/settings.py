@@ -22,6 +22,7 @@ DEFAULTS = {
         "mode": "per_app",       # per_app | auto | every_input
         "allowed_apps": [],       # remembered macOS bundle IDs, approved from an action task
         "infer": True,            # "open Spotify and play jazz" runs as a desktop task without typing /act
+        "effort": "low",          # Claude's effort for desktop tasks: low | medium | high | max (each step waits on it)
     },
     "claude": {
         "model": "default",     # default | opus | sonnet | haiku
@@ -101,6 +102,7 @@ _OPTIONS = {
     ('codex', 'effort'): [('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('xhigh', 'Extra high')],
     ('act', 'mode'): [('per_app', 'Ask once per app'), ('auto', 'Act automatically'), ('every_input', 'Ask before every input')],
     ('claude', 'model'): [('default', 'Account default'), ('opus', 'Opus'), ('sonnet', 'Sonnet'), ('haiku', 'Haiku')],
+    ('act', 'effort'): [('low', 'Low (fastest, no thinking)'), ('medium', 'Medium'), ('high', 'High'), ('max', 'Max (slowest)')],
     ('claude', 'effort'): [('low', 'Low (fastest)'), ('medium', 'Medium'), ('high', 'High'), ('max', 'Max (slowest)')],
     ('claude', 'image'): [(1366, '1366 px (lightest on usage)'), (1920, '1920 px (balanced)'), (0, 'Full resolution (sharpest)')],
     ('look', 'pointer'): [('theme', 'Theme default'), ('hand', 'Pixel hand'), ('arrow', 'Pixel arrow'), ('ring', 'Ring'), ('dot', 'Dot'), ('glass', 'Liquid glass lens'), ('glasshand', 'Liquid glass hand')],

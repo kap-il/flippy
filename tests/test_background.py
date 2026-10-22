@@ -21,7 +21,10 @@ class Background(unittest.IsolatedAsyncioTestCase):
         self.approved = []
         self.fail_with = None
 
+        self.looks = 0
+
         async def capture():
+            self.looks += 1
             return frame()
 
         async def approve(name, args, shot):
@@ -45,6 +48,94 @@ class Background(unittest.IsolatedAsyncioTestCase):
         await self.tools.invoke("menu", {"path": ["File", "New"], "reason": "new doc"})
         self.assertEqual([n for n, _ in self.done], ["press", "set_text", "menu"])
         self.assertEqual(self.tools.actions, 3)
+
+    async def test_do_steps_runs_the_whole_sequence_in_one_call(self):
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2},
+                                                           {"tool": "set_text", "element": 1, "text": "hi"},
+                                                           {"tool": "key", "combo": "cmd+s"},
+                                                           {"tool": "remember", "how": "save with cmd+s"}],
+                                                 "reason": "write and save"})
+        self.assertNotIn("is_error", r)
+        self.assertTrue(r["content"][0]["text"].startswith("Did all 4 steps"))
+        self.assertIn("App: TextEdit", r["content"][1]["text"])  # the app after the last step
+        self.assertEqual([(n, a.get("reason")) for n, a in self.done],
+                         [("press", "write and save"), ("set_text", "write and save"), ("key", "write and save")])
+        self.assertEqual((self.approved, self.tools.actions), (["press", "set_text", "key"], 3))
+        self.assertEqual(self.tools.timing["steps"], 2)  # one model turn for all of it
+        self.assertEqual(self.looks, 2)  # the look before and one after the last step, none in between
+        self.assertEqual(list(self.tools.notes.values()), ["save with cmd+s"])
+
+    async def test_the_app_gets_time_to_redraw_only_before_a_look(self):
+        from unittest.mock import AsyncMock, patch
+        from flippy import actions
+        self.tools.settle = 0.25
+        await self.tools.invoke("look", {})
+        with patch.object(actions.asyncio, "sleep", AsyncMock()) as sleep:
+            await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2}] * 5, "reason": "x"})
+            self.assertEqual(sleep.await_args_list, [((0.25,),)])  # once, before the look after the 5th
+            await self.tools.invoke("look", {})
+            self.assertEqual(sleep.await_count, 1)  # a look on its own doesn't wait
+
+    async def test_do_steps_stops_at_the_first_step_not_done(self):
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2},
+                                                           {"tool": "press", "element": 99},
+                                                           {"tool": "press", "element": 2}], "reason": "x"})
+        self.assertTrue(r["is_error"])
+        self.assertIn("Did 1 of 3 steps. Step 2 (press)", r["content"][0]["text"])
+        self.assertEqual(len(self.done), 1)
+        self.assertFalse(self.tools.cancel.is_set())  # Claude decides what next
+
+    async def test_do_steps_runs_only_its_tools(self):
+        await self.tools.invoke("look", {})
+        for steps in ([{"tool": "click", "x": 1, "y": 1}], [{"tool": "use_app", "name": "Notes"}], ["press"], []):
+            r = await self.tools.invoke("do_steps", {"steps": steps, "reason": "x"})
+            self.assertTrue(r["is_error"], steps)
+        self.assertEqual(self.done, [])
+
+    async def test_a_control_keeps_its_number_as_the_app_changes(self):
+        looks = iter([
+            "App: Calculator\n[1] text '0' (0,0 90x20)\n[2] button '7' (0,30 20x20) [press]\n[3] button '=' (60,30 20x20) [press]",
+            "App: Calculator\n[1] text '7' (0,0 90x20)\n[2] button 'AC' (0,60 20x20) [press]\n[3] button '7' (0,30 20x20) [press]"
+            "\n[4] button '=' (60,30 20x20) [press]",
+        ])
+        def capture():
+            text = next(looks)
+            n = text.count("\n[")
+            return asyncio.sleep(0, AppFrame("j", (100, 100), TARGET, {i: (f"el{i}", "AXButton", f"c{i}", [], False)
+                                                                        for i in range(1, n + 1)}, text))
+        self.tools.capture = capture
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("press", {"element": 2, "reason": "7"})
+        text = r["content"][0]["text"]
+        self.assertIn("[2] button '7'", text)   # still 2, though the app listed it 3rd
+        self.assertIn("[3] button '='", text)
+        self.assertIn("[5] button 'AC'", text)  # new controls get new numbers
+        self.assertIn("[4] text '7'", text)     # (the display's text is its label: a new control)
+        self.assertEqual(self.tools.snapshot.elements[2][0], "el3")  # number 2 presses the real '7'
+
+    async def test_use_app_first_needs_no_look(self):
+        r = await self.tools.invoke("use_app", {"name": "TextEdit", "reason": "open it"})
+        self.assertNotIn("is_error", r)
+        self.assertEqual([n for n, _ in self.done], ["use_app"])
+
+    async def test_screenshots_only_when_needed(self):
+        from flippy import actions
+        many = {i: (object(), "AXButton", f"b{i}", ["AXPress"], False) for i in range(1, actions.TEXT_ONLY_CONTROLS + 1)}
+        rich = AppFrame("anBn", (100, 100), TARGET, many, "App: Calculator")
+        sparse = frame()
+        self.tools.capture = lambda: asyncio.sleep(0, rich)
+        images = lambda r: [c for c in r["content"] if c["type"] == "image"]
+        self.assertTrue(images(await self.tools.invoke("look", {})))  # asked to look: it sees
+        r = await self.tools.invoke("press", {"element": 2, "reason": "x"})
+        self.assertFalse(images(r))  # the list covers it
+        self.assertIn("Call look", r["content"][-1]["text"])
+        self.assertTrue(images(await self.tools.invoke("click", {"x": 5, "y": 5, "count": 1, "real_pointer": False,
+                                                                  "reason": "x"})))  # by position: checked by eye
+        self.tools.capture = lambda: asyncio.sleep(0, sparse)
+        await self.tools.invoke("look", {})
+        self.assertTrue(images(await self.tools.invoke("press", {"element": 2, "reason": "x"})))  # says little
 
     async def test_unknown_control_number_is_a_retry_not_a_stop(self):
         await self.tools.invoke("look", {})
@@ -164,15 +255,15 @@ class StopAndWording(unittest.TestCase):
         f = SimpleNamespace(ui=SimpleNamespace(key_label=lambda name: None if name == "pause" else "⇧⌘Space"))
         self.assertEqual(daemon.Flippy._stop_hint(f), "Shift Cmd Space")  # pause off: the ask hotkey
 
-    def test_tasks_run_at_medium_effort_or_more(self):
+    def test_tasks_run_at_their_own_effort_setting(self):
         import asyncio
         from unittest.mock import patch
-        from flippy import brain
+        from flippy import brain, settings
         seen = {}
 
         class Client:
             def __init__(self, options):
-                seen["effort"] = options.effort
+                seen["effort"], seen["thinking"] = options.effort, options.thinking
 
             async def __aenter__(self):
                 raise RuntimeError("stop")
@@ -181,11 +272,13 @@ class StopAndWording(unittest.TestCase):
                 return False
         b = brain.Brain()
         tools = DesktopTools(None, None, None, catalog=BACKGROUND_CATALOG, prompt=BACKGROUND_PROMPT)
-        for setting, expected in (("low", "medium"), ("medium", "medium"), ("high", "high"), ("max", "max")):
-            b.options.effort = setting
-            with patch.object(brain, "ClaudeSDKClient", Client), self.assertRaises(RuntimeError):
+        b.options.effort = "high"  # the answers' effort doesn't apply
+        for setting in ("low", "medium", "high", "max"):
+            with patch.object(settings, "_data", {**settings._data, "act": {**settings._data["act"], "effort": setting}}), \
+                    patch.object(brain, "ClaudeSDKClient", Client), self.assertRaises(RuntimeError):
                 asyncio.run(b.act("x", tools))
-            self.assertEqual(seen["effort"], expected, setting)
+            self.assertEqual(seen["effort"], setting)
+            self.assertEqual(seen["thinking"], {"type": "disabled"} if setting == "low" else None)
 
 
 class StopFreesFlippy(unittest.TestCase):

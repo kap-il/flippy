@@ -394,9 +394,11 @@ def look(bundle, name, pid):
         if kind:
             label = _short(_attr(el, "AXTitle") or _attr(el, "AXDescription") or _attr(el, "AXHelp")
                            or _attr(el, "AXPlaceholderValue"))
-            value = _short(_attr(el, "AXValue")) if role not in ("AXStaticText",) or not label else ""
+            value = _short(_attr(el, "AXValue"))
             if role == "AXStaticText" and not label:
                 label, value = value, ""
+            if value == label:  # (a text whose label is a description, like Calculator's display, keeps its value)
+                value = ""
             acts = [a for a in _actions(el) if a in PRESS_ACTIONS]
             can_set = _settable(el)
             box = _frame(el)

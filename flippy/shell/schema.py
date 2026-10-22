@@ -48,6 +48,8 @@ LABELS = {
     ("codex", "effort"): ("Effort", None, None),
     ("act", "mode"): ("Approval", "When Flippy asks before acting in an app.", None),
     ("act", "allowed_apps"): ("Allowed apps", "Apps you approved once. Remove one to be asked again.", None),
+    ("act", "effort"): ("Task effort", "How hard Claude thinks before each step. Higher can help with tricky "
+                        "tasks; every step takes longer.", None),
     ("act", "infer"): ("Do things when I ask", "A request like “open Spotify” runs as a desktop task.", None),
     # COSMIC runs Flippy's shortcuts itself: the Shortcuts page shows those there (shortcuts.js)
     ("keys", "ask"): ("Ask about the screen", None, ("darwin",)),

@@ -74,9 +74,9 @@ class ActingCard(unittest.TestCase):
         async def main(fn, req):
             fn()
         f = types.SimpleNamespace(_action_main=main, _acting=lambda req, step, reason: steps.append(step),
-                                  ui=types.SimpleNamespace(app_act=lambda *a: "ok"))
+                                  _owns=lambda req: True, ui=types.SimpleNamespace(app_act=lambda *a: "ok"))
         frame = AppFrame("", (10, 10), ("app", 1, 2, (0, 0, 10, 10)), {}, "")
-        with patch.object(daemon, "log"):
+        with patch.object(daemon, "log"), patch.object(daemon, "loop", types.SimpleNamespace(idle_add=lambda fn: fn())):
             for name, args in (("click", {"x": 1, "y": 1, "count": 1, "real_pointer": True}),
                                ("scroll", {"x": 1, "y": 1, "direction": "down", "lines": 2}),
                                ("drag", {"x": 1, "y": 1, "to_x": 2, "to_y": 2, "real_pointer": True})):
@@ -89,9 +89,9 @@ class ActingCard(unittest.TestCase):
         async def main(fn, req):
             fn()
         f = types.SimpleNamespace(_action_main=main, _acting=lambda req, step, reason: steps.append(step),
-                                  ui=types.SimpleNamespace(app_act=lambda *a: "ok"))
+                                  _owns=lambda req: True, ui=types.SimpleNamespace(app_act=lambda *a: "ok"))
         frame = AppFrame("", (10, 10), ("app", 1, 2, (0, 0, 10, 10)), {3: (None, None, "Save " * 50)}, "")
-        with patch.object(daemon, "log"):
+        with patch.object(daemon, "log"), patch.object(daemon, "loop", types.SimpleNamespace(idle_add=lambda fn: fn())):
             asyncio.run(daemon.Flippy._app_perform(f, "press", {"element": 3, "reason": "r"}, frame, None, "req"))
             asyncio.run(daemon.Flippy._app_perform(f, "menu", {"path": ["File"] * 40, "reason": "r"}, frame, None, "req"))
             asyncio.run(daemon.Flippy._app_perform(f, "menu", {"path": ["File"] * 40, "real_pointer": True, "reason": "r"},

@@ -736,6 +736,7 @@ class Flippy:
                              catalog=getattr(self.ui, "act_catalog", BACKGROUND_CATALOG),
                              prompt=getattr(self.ui, "act_prompt", BACKGROUND_PROMPT) + act_memory.brief())
         tools.max_turns = limits.max_turns
+        tools.log = log
         tools.on_thought = lambda text: loop.idle_add(lambda: self._acting(req, thought=text) and False)
         self.action_tools = tools
         self.act_status = {"step": None, "reason": None, "thought": None, "trail": []}
@@ -870,6 +871,8 @@ class Flippy:
             loop.idle_add(lambda: self.request is req and self.ui.action_card.hide() and False)
 
     def _action_done(self, tools, req, result, error):
+        if hasattr(tools, "summary"):
+            log("act: " + tools.summary())
         if not self._owns(req) or self.action_tools is not tools:
             return
         failure = (tools.failure or "").lower()

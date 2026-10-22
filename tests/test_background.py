@@ -46,6 +46,52 @@ class Background(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([n for n, _ in self.done], ["press", "set_text", "menu"])
         self.assertEqual(self.tools.actions, 3)
 
+    async def test_press_many_presses_each_from_the_same_look_in_one_step(self):
+        await self.tools.invoke("look", {})
+        shots = []
+        perform = self.tools.perform
+        async def record(name, args, shot, cancel):
+            shots.append(shot)
+            await perform(name, args, shot, cancel)
+        self.tools.perform = record
+        r = await self.tools.invoke("press_many", {"elements": [2, 1, 2], "reason": "keypad"})
+        self.assertNotIn("is_error", r)
+        self.assertEqual([(n, a["element"]) for n, a in self.done], [("press", 2), ("press", 1), ("press", 2)])
+        self.assertEqual(len({id(s) for s in shots}), 1)  # numbers from one look, even if the app changes between
+        self.assertEqual((self.approved, self.tools.actions, self.tools.timing["steps"]), (["press_many"], 3, 2))
+
+    async def test_press_many_checks_every_number_first(self):
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("press_many", {"elements": [2, 99], "reason": "keypad"})
+        self.assertTrue(r["is_error"])
+        self.assertEqual(self.done, [])  # nothing pressed when one number is wrong
+        self.tools.max_actions = 2
+        r = await self.tools.invoke("press_many", {"elements": [2, 2, 2], "reason": "keypad"})
+        self.assertTrue(r["is_error"])
+        self.assertEqual(self.done, [])
+
+    async def test_use_app_first_needs_no_look(self):
+        r = await self.tools.invoke("use_app", {"name": "TextEdit", "reason": "open it"})
+        self.assertNotIn("is_error", r)
+        self.assertEqual([n for n, _ in self.done], ["use_app"])
+
+    async def test_screenshots_only_when_needed(self):
+        from flippy import actions
+        many = {i: (object(), "AXButton", f"b{i}", ["AXPress"], False) for i in range(1, actions.TEXT_ONLY_CONTROLS + 1)}
+        rich = AppFrame("anBn", (100, 100), TARGET, many, "App: Calculator")
+        sparse = frame()
+        self.tools.capture = lambda: asyncio.sleep(0, rich)
+        images = lambda r: [c for c in r["content"] if c["type"] == "image"]
+        self.assertTrue(images(await self.tools.invoke("look", {})))  # asked to look: it sees
+        r = await self.tools.invoke("press", {"element": 2, "reason": "x"})
+        self.assertFalse(images(r))  # the list covers it
+        self.assertIn("Call look", r["content"][-1]["text"])
+        self.assertTrue(images(await self.tools.invoke("click", {"x": 5, "y": 5, "count": 1, "real_pointer": False,
+                                                                  "reason": "x"})))  # by position: checked by eye
+        self.tools.capture = lambda: asyncio.sleep(0, sparse)
+        await self.tools.invoke("look", {})
+        self.assertTrue(images(await self.tools.invoke("press", {"element": 2, "reason": "x"})))  # says little
+
     async def test_unknown_control_number_is_a_retry_not_a_stop(self):
         await self.tools.invoke("look", {})
         r = await self.tools.invoke("press", {"element": 99, "reason": "x"})
@@ -144,6 +190,11 @@ class Describe(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PressManyCard(unittest.TestCase):
+    def test_the_card_names_each_control(self):
+        self.assertIn("press 'Save', 'body'", frame().describe("press_many", {"elements": [2, 1], "reason": "r"}))
 
 
 class StopAndWording(unittest.TestCase):

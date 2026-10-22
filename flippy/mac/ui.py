@@ -31,12 +31,12 @@ from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory
                     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
                     NSWindowCollectionBehaviorIgnoresCycle, NSWindowCollectionBehaviorStationary,
                     NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
-from Foundation import NSAttributedString, NSMakeRect, NSObject
+from Foundation import NSAttributedString, NSMakeRect, NSMakeSize, NSObject
 from PyObjCTools import AppHelper
 from Quartz import CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess
 
 from .. import loop, settings, themes
-from ..history import BOX_HINT, PROMPTS
+from ..history import BOX_HINT, PROMPTS, SHORT_HINTS
 from ..overlay import OverlayBase
 from ..shell.window import AppHost
 from . import hotkeys, sensors, statusicon
@@ -349,22 +349,23 @@ class Overlay(OverlayBase):
 # --------------------------------------------------------------------------- question box
 
 def box_style(theme):
-    """The question box's look per theme (the macOS counterpart of Theme.box_css)."""
+    """The question box's look per theme (the macOS counterpart of Theme.box_css). Small type for a small box, and
+    no square corners: the sharp themes (Mono, Terminal) get a softer radius here (#37)."""
     st = {"bg": _rgba(24 / 255, 24 / 255, 28 / 255, 0.94), "border": _rgba(90 / 255, 160 / 255, 1, 0.55),
-          "border_w": 1, "radius": 14, "fg": _hex("f2f2f2"), "font": (None, 16), "field_bg": None,
-          "field_border": None, "field_radius": 0, "hint": _rgba(1, 1, 1, 0.5), "hint_font": (None, 12)}
+          "border_w": 1, "radius": 14, "fg": _hex("f2f2f2"), "font": (None, 14), "field_bg": None,
+          "field_border": None, "field_radius": 0, "hint": _rgba(1, 1, 1, 0.5), "hint_font": (None, 11)}
     if theme.key == "mono":
-        st.update(bg=_rgba(0, 0, 0, 0.96), border=_rgba(*theme.outline), radius=0, fg=_rgba(*theme.fg),
-                  field_bg=_rgba(0, 0, 0, 1), field_border=_rgba(*theme.outline, 0.7), field_radius=0,
+        st.update(bg=_rgba(0, 0, 0, 0.96), border=_rgba(*theme.outline), radius=10, fg=_rgba(*theme.fg),
+                  field_bg=_rgba(0, 0, 0, 1), field_border=_rgba(*theme.outline, 0.7), field_radius=6,
                   hint=_rgba(*theme.fg, 0.55))
     elif theme.key == "cosmic":
         st.update(bg=_rgba(*theme.bg, 0.96), border=_rgba(*theme.accent, 0.7), radius=theme.radius,
                   fg=_rgba(*theme.fg), hint=_rgba(*theme.fg, 0.5))
     elif theme.key == "terminal":
         green = (64 / 255, 1, 115 / 255)
-        st.update(bg=_hex("030805"), border=_rgba(*green, 0.6), radius=0, fg=_rgba(*green), font=("Menlo", 16),
-                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), hint=_rgba(*green, 0.55),
-                  hint_font=("Menlo", 12))
+        st.update(bg=_hex("030805"), border=_rgba(*green, 0.6), radius=10, fg=_rgba(*green), font=("Menlo", 13),
+                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), field_radius=6, hint=_rgba(*green, 0.55),
+                  hint_font=("Menlo", 10))
     elif theme.key == "mediaplayer" and GLASS:  # Liquid Glass box; the field is a frostier, smokier pane
         st.update(glass=True, bg=None, border=_rgba(1, 1, 1, 0.35), radius=theme.LIQUID_R, fg=_hex("ffffff"),
                   field_bg=glass_tint("field"), field_border=_rgba(1, 1, 1, 0.3),
@@ -377,7 +378,7 @@ def box_style(theme):
                   field_bg=_rgba(1, 1, 1, 0.12), field_radius=12)
     elif theme.key == "mediaplayer":
         st.update(bg=_rgba(40 / 255, 46 / 255, 48 / 255, 0.88), border=_rgba(0, 0, 0, 0.7), radius=9, fg=_hex("ffffff"),
-                  font=(None, 15), field_bg=_rgba(0, 0, 0, 0.3), field_border=_rgba(0, 0, 0, 0.6), field_radius=12,
+                  font=(None, 14), field_bg=_rgba(0, 0, 0, 0.3), field_border=_rgba(0, 0, 0, 0.6), field_radius=12,
                   hint=_rgba(235 / 255, 238 / 255, 240 / 255, 0.7))
     return st
 
@@ -397,6 +398,39 @@ def _layer(view, bg, border=None, border_w=1, radius=0):
     layer.setCornerRadius_(radius)
 
 
+BOX_INCHES = 1.5       # the question box's width on screen (#37)...
+BOX_PT = (160, 280)    # ...kept within these points, and BOX_FALLBACK_PT when the display doesn't report its size
+BOX_FALLBACK_PT = 190  # about 1.5" on a 14" MacBook
+MOUSE_GAP = 14         # the box opens this far right of and below the mouse
+MAX_LINES = 8          # it grows down to this many lines, then scrolls
+
+
+def box_width(screen):
+    """BOX_INCHES across on this display, from its physical size."""
+    try:
+        mm = Quartz.CGDisplayScreenSize(screen.deviceDescription()["NSScreenNumber"]).width
+    except Exception:
+        mm = 0
+    if mm <= 0:
+        return BOX_FALLBACK_PT
+    return round(min(max(screen.frame().size.width / mm * 25.4 * BOX_INCHES, BOX_PT[0]), BOX_PT[1]))
+
+
+def box_origin(mouse, size, area, gap=MOUSE_GAP):
+    """Where a box of size (w, h) goes next to the mouse: right of and below it, or left of it near the right edge
+    and above it near the bottom, always inside area (x, y, w, h). AppKit coordinates (origin bottom left)."""
+    (mx, my), (w, h), (ax, ay, aw, ah) = mouse, size, area
+    x = mx + gap if mx + gap + w <= ax + aw else mx - gap - w
+    y = my - gap - h if my - gap - h >= ay else my + gap
+    return min(max(x, ax), ax + aw - w), min(max(y, ay), ay + ah - h)
+
+
+def _text_height(text, font, width):
+    rect = NSAttributedString.alloc().initWithString_attributes_(text or " ", {NSFontAttributeName: font}) \
+        .boundingRectWithSize_options_(NSMakeSize(width, 1e6), 1)  # NSStringDrawingUsesLineFragmentOrigin
+    return math.ceil(rect.size.height)
+
+
 class BoxDelegate(NSObject, protocols=[objc.protocolNamed("NSTextFieldDelegate")]):
     def control_textView_doCommandBySelector_(self, control, text_view, sel):
         sel = sel.decode() if isinstance(sel, bytes) else str(sel)
@@ -406,20 +440,27 @@ class BoxDelegate(NSObject, protocols=[objc.protocolNamed("NSTextFieldDelegate")
         if sel == "cancelOperation:":
             self.box.on_cancel()
             return True
-        if sel in ("moveUp:", "moveDown:"):  # one line, so Up and Down only ever mean history
+        # history on one line, or while an earlier question is shown unedited; otherwise the caret moves between lines
+        if sel in ("moveUp:", "moveDown:") and (self.box.lines <= 1 or self.box.recalled):
             self.box.recall(older=sel == "moveUp:")
             return True
         return False
 
+    def controlTextDidChange_(self, note):  # typing (a recalled question, set in code, doesn't come here)
+        self.box.recalled = False
+        self.box.fit()
+
 
 class InputBox:
-    WIDTH = 560
-    PAD_X, PAD_Y = 16, 12
+    """The question box: about 1.5 inches wide, at the mouse, growing down as the question wraps (#37)."""
+    PAD_X, PAD_Y = 10, 10
 
     def __init__(self, on_submit, on_cancel):
         self.on_submit = on_submit
         self.on_cancel = on_cancel
         self.panel = None
+        self.lines = 1
+        self.recalled = False  # the field shows an earlier question, not yet edited
         self.delegate = BoxDelegate.alloc().init()
         self.delegate.box = self
 
@@ -440,25 +481,31 @@ class InputBox:
         editor = self.entry.currentEditor()
         if editor is not None:
             editor.setSelectedRange_((len(text), 0))  # cursor at the end, like a shell
+        self.recalled = True
+        self.fit()
 
     def show(self, hint=BOX_HINT):
         """hint: the line under the field (a follow-up's says Esc goes back to the walkthrough)."""
+        hint = SHORT_HINTS.get(hint, hint)
         if self.panel:
             self.hint.setStringValue_(hint)
+            self.fit()
             self.panel.makeKeyAndOrderFront_(None)
             return
         PROMPTS.reset()
         theme = themes.get(settings.get("look", "theme"))
         st = box_style(theme)
-        font, hint_font = _font(st["font"]), _font(st["hint_font"])
-        field_h = math.ceil(font.ascender() - font.descender() + font.leading()) + 12
-        hint_h = math.ceil(hint_font.ascender() - hint_font.descender()) + 2
-        w = self.WIDTH + 2 * self.PAD_X
-        h = self.PAD_Y + field_h + 6 + hint_h + self.PAD_Y
-
-        frame = main_screen().visibleFrame()
-        x = frame.origin.x + (frame.size.width - w) / 2
-        y = frame.origin.y + frame.size.height * 0.72 - h
+        self.font, self.hint_font = font, hint_font = _font(st["font"]), _font(st["hint_font"])
+        self.line_h = math.ceil(font.ascender() - font.descender() + font.leading())
+        screen = main_screen()
+        self.w = w = box_width(screen)
+        self.inset = 6 if st["field_bg"] else 0
+        self.lines, self.recalled = 1, False
+        h = self._height(hint)
+        area = screen.visibleFrame()
+        self.area = (area.origin.x, area.origin.y, area.size.width, area.size.height)
+        mouse = NSEvent.mouseLocation()
+        x, y = box_origin((mouse.x, mouse.y), (w, h), self.area)
         panel = KeyPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, w, h), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
             NSBackingStoreBuffered, False)
@@ -482,10 +529,9 @@ class InputBox:
             root.setCornerRadius_(st["radius"])
             root.setContentView_(card)
             panel.setHasShadow_(False)  # the glass draws its own edge and depth
-        field_box = NSView.alloc().initWithFrame_(NSMakeRect(self.PAD_X, h - self.PAD_Y - field_h, self.WIDTH, field_h))
+        field_box = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 1, 1))
         _layer(field_box, st["field_bg"], st["field_border"], 1, st["field_radius"])
-        inset = 8 if st["field_bg"] else 0
-        entry = NSTextField.alloc().initWithFrame_(NSMakeRect(inset, 6, self.WIDTH - 2 * inset, field_h - 12))
+        entry = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 1, 1))
         entry.setBezeled_(False)
         entry.setBordered_(False)
         entry.setDrawsBackground_(False)
@@ -494,11 +540,13 @@ class InputBox:
         entry.setTextColor_(st["fg"])
         entry.setPlaceholderAttributedString_(NSAttributedString.alloc().initWithString_attributes_(
             theme.placeholder, {NSFontAttributeName: font, NSForegroundColorAttributeName: st["fg"].colorWithAlphaComponent_(0.45)}))
-        entry.cell().setUsesSingleLineMode_(True)
-        entry.cell().setScrollable_(True)
+        entry.cell().setUsesSingleLineMode_(False)
+        entry.cell().setWraps_(True)  # long questions wrap and the box grows down (fit)
+        entry.cell().setScrollable_(False)
+        entry.cell().setLineBreakMode_(0)  # NSLineBreakByWordWrapping
         entry.setDelegate_(self.delegate)
         field_box.addSubview_(entry)
-        hint = NSTextField.labelWithString_(hint)
+        hint = NSTextField.wrappingLabelWithString_(hint)
         hint.setFont_(hint_font)
         hint.setTextColor_(st["hint"])
         if st.get("hint_shadow"):  # white hint on light frost: a soft shadow keeps it readable
@@ -507,18 +555,61 @@ class InputBox:
             shadow.setShadowBlurRadius_(3)
             shadow.setShadowOffset_((0, -1))
             hint.setShadow_(shadow)
-        hint.setFrame_(NSMakeRect(self.PAD_X, self.PAD_Y - 2, self.WIDTH, hint_h))
         card.addSubview_(field_box)
         card.addSubview_(hint)
         panel.setContentView_(root)
 
-        self.panel, self.entry, self.hint = panel, entry, hint
+        self.panel, self.root, self.card = panel, root, card
+        self.field_box, self.entry, self.hint = field_box, entry, hint
+        self._layout(h)
         panel.makeKeyAndOrderFront_(None)
         panel.makeFirstResponder_(entry)
         editor = entry.currentEditor()
         if editor is not None:
             editor.setInsertionPointColor_(st["fg"])
             editor.setAllowsUndo_(True)  # ⌘Z / ⇧⌘Z
+
+    # the box's insides, across: PAD_X | field (inset | text | inset) | PAD_X; down: PAD_Y field 6 hint PAD_Y
+    def _text_w(self):
+        return self.w - 2 * self.PAD_X - 2 * self.inset
+
+    def _hint_h(self, hint):
+        return _text_height(hint, self.hint_font, self.w - 2 * self.PAD_X)
+
+    def _field_h(self):
+        return min(self.lines, MAX_LINES) * self.line_h + 12
+
+    def _height(self, hint):
+        return self.PAD_Y + self._field_h() + 6 + self._hint_h(hint) + self.PAD_Y
+
+    def _layout(self, h):
+        w, field_h, hint_h = self.w, self._field_h(), self._hint_h(str(self.hint.stringValue()))
+        for view in (self.root, self.card):
+            view.setFrame_(NSMakeRect(0, 0, w, h))
+        self.field_box.setFrame_(NSMakeRect(self.PAD_X, h - self.PAD_Y - field_h, w - 2 * self.PAD_X, field_h))
+        self.entry.setFrame_(NSMakeRect(self.inset, 6, self._text_w(), field_h - 12))
+        self.hint.setFrame_(NSMakeRect(self.PAD_X, self.PAD_Y - 2, w - 2 * self.PAD_X, hint_h))
+
+    def fit(self):
+        """Grow or shrink to the question's lines, keeping the top edge where it is (and the box on screen)."""
+        if not self.panel:
+            return
+        editor = self.entry.currentEditor()
+        text = str(editor.string() if editor is not None else self.entry.stringValue())
+        # the field editor pads each line 2pt on both sides
+        self.lines = max(1, round(_text_height(text, self.font, self._text_w() - 4) / self.line_h))
+        h = self._height(str(self.hint.stringValue()))
+        frame = self.panel.frame()
+        if h != frame.size.height:
+            top = frame.origin.y + frame.size.height
+            y = max(top - h, self.area[1])
+            self.panel.setFrame_display_(NSMakeRect(frame.origin.x, y, self.w, h), True)
+        self._layout(h)
+        if h != frame.size.height:  # a clear window: redraw it whole at its new size, and its shadow with it
+            self.panel.contentView().setNeedsDisplay_(True)
+            self.panel.display()
+            self.panel.invalidateShadow()
+
 
     def hide(self):
         if self.panel:
@@ -535,6 +626,7 @@ class InputBox:
             editor.insertText_(text[len(current):])
         else:
             self.entry.setStringValue_(text)
+        self.fit()
 
     def activate(self):
         self.submit(str(self.entry.stringValue()))

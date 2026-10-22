@@ -9,6 +9,9 @@ SIZE = 50
 BOX_HINT = "Enter to ask or get it done · ↑ earlier · Esc to close · /new · /settings"
 FOLLOW_UP_HINT = "Enter to ask about this step · Esc back to the walkthrough"
 SECOND_FOLLOW_UP_HINT = "Enter to ask about this step · Esc to close"  # (a side answer or a follow-up stays up)
+# the same, for the macOS box, which is about 1.5 inches wide (#37)
+SHORT_HINTS = {BOX_HINT: "↵ ask · ↑ earlier · esc close", FOLLOW_UP_HINT: "↵ ask about this step · esc back",
+               SECOND_FOLLOW_UP_HINT: "↵ ask about this step · esc close"}
 
 
 class PromptHistory:

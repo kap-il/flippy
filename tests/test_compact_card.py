@@ -9,7 +9,7 @@ import cairo
 from flippy import overlay, placement, settings, themes
 
 W, H = 1512, 982
-NARROW = 191  # 1.5" on a 14" MacBook
+NARROW = 248  # the answer card: 1.3 x the question box's 191pt (1.5" on a 14" MacBook)
 SHORT = "Click Save."
 LONG = " ".join(["This answer goes on for a while so it needs a lot of room on the screen."] * 4)
 
@@ -44,17 +44,17 @@ class Card(Base):
         self.ov.paint(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, W, H)), W, H)
         return self.ov.hits
 
-    def test_every_theme_is_the_box_width_with_its_controls_inside_and_apart(self):
-        for key in themes.THEMES:
+    def test_every_theme_is_the_card_width_with_its_controls_inside_and_apart(self):
+        for self.ov.card_w, key in [(w, k) for w in (NARROW, 191) for k in themes.THEMES]:  # and at the box's width
             for text, header, steps in ((SHORT, "Save", ["Save"]), (LONG, None, []), (LONG, "Save", ["a", "b", "c"])):
-                with self.subTest(theme=key, text=text[:12], steps=len(steps)):
+                with self.subTest(width=self.ov.card_w, theme=key, text=text[:12], steps=len(steps)):
                     settings.set("look", "theme", key)
                     self.ov.clear()
                     self.ov.point(400, 300, "Save")
                     self.ov.show_text(text, header=header, follow=True, controls=True, steps=steps)
                     hits = self.paint()
                     (x, y, w, h), _ = self.ov.card_layout(W, H)
-                    self.assertEqual(w, NARROW)
+                    self.assertEqual(w, self.ov.card_w)
                     self.assertTrue(hits)
                     for name, (hx, hy, hw, hh) in hits.items():
                         self.assertTrue(x <= hx and hx + hw <= x + w and y <= hy and hy + hh <= y + h, name)

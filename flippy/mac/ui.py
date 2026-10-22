@@ -326,7 +326,7 @@ class Overlay(OverlayBase):
         return self._mouse()
 
     def card_width(self):
-        return box_width(main_screen())  # the same width as the question box
+        return round(box_width(main_screen()) * CARD_SCALE)
 
     def _over_control(self):
         x, y = self._mouse()
@@ -409,6 +409,7 @@ BOX_PT = (160, 280)    # ...kept within these points, and BOX_FALLBACK_PT when t
 BOX_FALLBACK_PT = 190  # about 1.5" on a 14" MacBook
 MOUSE_GAP = 14         # the box opens this far right of and below the mouse
 MAX_LINES = 8          # it grows down to this many lines, then scrolls
+CARD_SCALE = 1.3       # answer cards are this much wider than the question box: about 2 inches
 
 
 def box_width(screen):

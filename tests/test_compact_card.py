@@ -65,6 +65,42 @@ class Card(Base):
                             if not (key == "mediaplayer" and {a, b} == {"seek", "toggle"}):
                                 self.assertEqual(placement.overlap(hits[a], hits[b]), 0, f"{a} / {b}")
 
+    def test_every_theme_has_the_slim_row_and_is_shorter_for_it(self):
+        for key in [k for k, theme in themes.THEMES.items() if not theme.slim_controls]:
+            with self.subTest(theme=key):
+                settings.set("look", "theme", key)
+                self.ov.clear()
+                self.ov.show_text(SHORT, header="Save", controls=True, steps=["Save", "Close"])
+                hits = self.paint()
+                self.assertTrue({"prev", "toggle", "next", "speed_cycle", "close", "seek"} <= set(hits))
+                (_, _, _, slim), opts = self.ov.card_layout(W, H)
+                theme = themes.get(key)
+                own = theme.card_size(self.ov.card, {**opts, "strip": False})[1]  # its own controls, same width
+                self.assertLess(slim, own)
+
+    def test_only_players_when_the_setting_says_so(self):
+        settings.set("look", "controls", "players")
+        for key in themes.THEMES:
+            with self.subTest(theme=key):
+                settings.set("look", "theme", key)
+                self.ov.clear()
+                self.ov.show_text(SHORT, controls=True)
+                theme = themes.get(key)
+                self.assertEqual(self.ov.card_layout(W, H)[1]["strip"], theme.player and not theme.slim_controls)
+
+    def test_terminal_keeps_its_own_status_line(self):
+        settings.set("look", "theme", "terminal")
+        self.ov.show_text(SHORT, controls=True)
+        self.assertFalse(self.ov.card_layout(W, H)[1]["strip"])
+        self.assertIn("toggle", self.paint())
+
+    def test_no_row_while_thinking_or_on_a_task(self):
+        for fields in ({"phase": "thinking"}, {"task": True}, {"error": True}):
+            with self.subTest(**fields):
+                self.ov.clear()
+                self.ov.show_text("x", controls=True, **fields)
+                self.assertFalse(self.ov.card_layout(W, H)[1]["strip"])
+
     def test_elsewhere_each_theme_keeps_its_own_width(self):
         self.ov.card_w = None  # COSMIC: no card_w
         for key in themes.THEMES:

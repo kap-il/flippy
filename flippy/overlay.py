@@ -273,6 +273,8 @@ class OverlayBase:
             (x, y, cw, ch), opts = lay
             theme.draw(cr, x, y, cw, ch, self.card, now - self.card_t0, opts)
             hits = theme.hit_regions(self.card, x, y, cw, ch, opts)
+            if opts.get("strip"):
+                hits.update(theme.draw_strip(cr, self.card, x, y, cw, ch, opts))
             if themes.pin_shown(self.card):
                 theme.draw_pin(cr, self.card, x, y, cw, ch, opts)
                 hits["pin"] = theme.pin_rect(self.card, x, y, cw, ch, opts)
@@ -309,6 +311,7 @@ class OverlayBase:
                 "backdrop": self.has_backdrop and bool(self.theme.backdrop),
                 "player_shine": settings.get("look", "player_shine"), "thought_open": self.thought_open,
                 "card_w": self.card_width()}
+        opts["strip"] = self.theme.strip_on(self.card, opts)  # a narrow card's slim row of controls (#37)
         return self._card_rect(w, h, opts), opts
 
     def card_width(self):

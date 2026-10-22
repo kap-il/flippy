@@ -8,11 +8,13 @@ the hooks at the bottom: redraw, opacity, ticking, and which parts take clicks.
 It feeds mouse input in through press/motion/release/right_click.
 """
 import time
+from dataclasses import replace
 
 import cairo
 
 from . import placement, settings, themes
 
+DOTS_PER_S = 3              # a thinking card's "…" cycles through ., .., ... this many steps a second
 MOUSE_GAP = 14              # a card by the mouse sits this far from it, like the question box (#37)
 DOCK_TOP = 40               # a docked answer stays below the menu bar...
 PLAN_H = 180                # ...and its spot is picked for at least this height: answers grow as they play
@@ -271,7 +273,7 @@ class OverlayBase:
         hits = {}
         if lay:
             (x, y, cw, ch), opts = lay
-            theme.draw(cr, x, y, cw, ch, self.card, now - self.card_t0, opts)
+            theme.draw(cr, x, y, cw, ch, self._shown(self.card, now - self.card_t0), now - self.card_t0, opts)
             hits = theme.hit_regions(self.card, x, y, cw, ch, opts)
             if opts.get("strip"):
                 hits.update(theme.draw_strip(cr, self.card, x, y, cw, ch, opts))
@@ -313,6 +315,14 @@ class OverlayBase:
                 "card_w": self.card_width()}
         opts["strip"] = self.theme.strip_on(self.card, opts)  # a narrow card's slim row of controls (#37)
         return self._card_rect(w, h, opts), opts
+
+    @staticmethod
+    def _shown(card, t):
+        """The card as drawn: a thinking card's trailing "…" cycles through "", ".", "..", "..." so it visibly works.
+        Its size is measured from the "…" text, so the card doesn't jitter."""
+        if card.phase != "thinking" or not card.text.endswith("…"):
+            return card
+        return replace(card, text=card.text[:-1] + "." * (int(t * DOTS_PER_S) % 4))
 
     def card_width(self):
         """The card's width in px, for every theme (macOS: the question box's), or None for each theme's own."""

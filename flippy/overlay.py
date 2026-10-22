@@ -82,11 +82,15 @@ class OverlayBase:
         self._ensure_tick()
 
     def point(self, x, y, label):
-        """Move the pointer to (x, y): drop in if it's not showing yet, otherwise glide there."""
+        """Move the pointer to (x, y): glide there from where it is, or, when it isn't showing yet, out from the
+        mouse, where the question box opened (#37); drop in where the platform can't say where the mouse is."""
         now = time.monotonic()
         if self.pos is None:
-            self.pos = (x, y)
+            start = self.mouse()
+            self.pos = start or (x, y)
             self.t0 = now
+            if start:
+                self.move_from, self.move_t0 = start, now
         else:
             self.move_from = self.pos
             self.move_t0 = now

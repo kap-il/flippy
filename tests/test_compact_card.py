@@ -1,5 +1,5 @@
 """Answers in a card as narrow as the question box (#37): every theme draws at that width with its controls inside and
-apart."""
+apart, and the pointer glides out from the mouse rather than dropping in where it points."""
 import unittest
 from unittest.mock import patch
 
@@ -73,6 +73,27 @@ class Card(Base):
                 self.ov.show_text(LONG, controls=True)
                 (_, _, w, _), _ = self.ov.card_layout(W, H)
                 self.assertGreater(w, 300)
+
+
+class Glide(Base):
+    def test_the_first_point_glides_out_from_the_mouse(self):
+        self.ov.at = (700, 500)
+        self.ov.point(20, 10, "Apple menu")
+        self.assertEqual(self.ov.pos, (700, 500))
+        self.assertEqual(self.ov.move_from, (700, 500))
+        self.assertEqual(self.ov.target[:2], (20, 10))
+
+    def test_it_drops_in_where_the_mouse_is_unknown(self):
+        self.ov.point(20, 10, "Apple menu")
+        self.assertEqual(self.ov.pos, (20, 10))
+        self.assertIsNone(self.ov.move_from)
+
+    def test_later_points_glide_from_where_it_is(self):
+        self.ov.at = (700, 500)
+        self.ov.point(20, 10, "Apple menu")
+        self.ov.pos, self.ov.move_from = (20, 10), None  # arrived
+        self.ov.point(1400, 10, "Clock")
+        self.assertEqual(self.ov.move_from, (20, 10))
 
 
 if __name__ == "__main__":

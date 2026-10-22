@@ -783,7 +783,8 @@ class Midnight(Theme):
     def _mgeom(self, x, y, w, h, card):
         cy = y + h - self.CTRL_H / 2 - 4
         px0 = x + w - 16 - 122
-        return {"cy": cy, "n": len(card.steps), "dot0": x + 22,
+        n = len(card.steps)
+        return {"cy": cy, "n": n if x + 22 + (n - 1) * 14 + 5 <= px0 - 12 else 0, "dot0": x + 22,  # dots if they fit
                 "prev": (px0 + 14, cy), "toggle": (px0 + 42, cy), "next": (px0 + 70, cy),
                 "chip": (px0 + 86, cy - 10, 36, 20)}
 
@@ -904,9 +905,10 @@ class Cosmic(Midnight):
     def _cgeom(self, x, y, w, h):
         row = y + h - self.CTRL_H - 2
         ox, cy = x + w / 2, row + 46
+        gap, chip = (48, (x + 16, cy - 12, 42, 24)) if w >= 260 else (36, (x + 10, cy - 12, 30, 24))  # narrow (#37)
         return {"row": row, "cy": cy, "x0": x + 18, "x1": x + w - 18,
-                "prev": (ox - 48, cy), "toggle": (ox, cy), "next": (ox + 48, cy),
-                "chip": (x + 16, cy - 12, 42, 24), "close": (x + w - 16 - 24, cy - 12, 24, 24)}
+                "prev": (ox - gap, cy), "toggle": (ox, cy), "next": (ox + gap, cy),
+                "chip": chip, "close": (x + w - 16 - 24, cy - 12, 24, 24)}
 
     def _draw_controls(self, cr, x, y, w, h, card, opts):
         G = self._cgeom(x, y, w, h)
@@ -1005,9 +1007,12 @@ class Terminal(Theme):
 
     BAR_CHARS = 12
 
-    def _status(self, card):
+    def _status(self, card, opts=None):
         """[(name or None, text, inverse)] tokens of the status line."""
         n = max(len(card.steps), 1)
+        if compact(opts):  # narrow: no gaps, no bar
+            return [("prev", "[<<]"), ("toggle", "[||]" if playing(card) else "[|>]"), ("next", "[>>]"),
+                    ("close", "[x]"), (None, " "), ("speed_cycle", f"{card.speed:g}x"), (None, f" {card.step + 1}/{n}")]
         fill = round(max(0.0, min(card.progress, 1.0)) * self.BAR_CHARS)
         return [("prev", "[<<]"), (None, " "), ("toggle", "[||]" if playing(card) else "[|>]"), (None, " "),
                 ("next", "[>>]"), (None, " "), ("close", "[x]"), (None, "  "),
@@ -1016,9 +1021,9 @@ class Terminal(Theme):
 
     def _status_layout(self, cr, card, opts, x, y):
         """Token layouts with their positions: [(name, layout, x, w, h)]."""
-        px = opts["text_size"] - 2
+        px = opts["text_size"] - (4 if compact(opts) else 2)
         out, cx = [], x
-        for name, text in self._status(card):
+        for name, text in self._status(card, opts):
             lay = layout(cr, text, self.font, px)
             tw, th = lsize(lay)
             out.append((name, lay, cx, tw, th))
@@ -1527,8 +1532,10 @@ class Glass(Theme):
     def _geom(self, x, y, w, h):
         cy = y + h - 12 - self.CTRL_H / 2
         by = cy - self.CTRL_H / 2 - 8 - self.BAR_H / 2
+        narrow = w < 260  # (#37) the transport alone: no room for the speed and close buttons beside it
         return {"cy": cy, "ox": x + w / 2, "by": by, "bx0": x + self.PAD + 46, "bx1": x + w - self.PAD - 46,
-                "speed": (x + self.PAD + self.BTN / 2, cy), "close": (x + w - self.PAD - self.BTN / 2, cy)}
+                "speed": None if narrow else (x + self.PAD + self.BTN / 2, cy),
+                "close": None if narrow else (x + w - self.PAD - self.BTN / 2, cy)}
 
     def hit_regions(self, card, x, y, w, h, opts=None):
         if card.phase == "thinking" or card.task:
@@ -1538,8 +1545,9 @@ class Glass(Theme):
         hits = {"prev": (ox - 78, cy - 20, 40, 40), "toggle": (ox - 22, cy - 22, 44, 44), "next": (ox + 38, cy - 20, 40, 40),
                 "seek": (G["bx0"] - 4, G["by"] - 8, G["bx1"] - G["bx0"] + 8, 16)}
         for name in ("speed", "close"):
-            bx, by = G[name]
-            hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
+            if G[name]:
+                bx, by = G[name]
+                hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
         return hits
 
     @staticmethod
@@ -1621,14 +1629,16 @@ class Glass(Theme):
             glyph(cr, name, gx, cy, 8, (1, 1, 1, 1.0 if pressed == name else 0.85))
         glyph(cr, "pause" if playing(card) else "play", ox, cy, 12, (1, 1, 1, 1.0 if pressed != "toggle" else 0.7))
         # round glass buttons: speed (left), close (right)
-        sx, sy = G["speed"]
-        self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
-        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-        sw, sh = lsize(sl)
-        show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
-        cx_, cy_ = G["close"]
-        self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
-        glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
+        if G["speed"]:
+            sx, sy = G["speed"]
+            self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
+            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+            sw, sh = lsize(sl)
+            show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
+        if G["close"]:
+            cx_, cy_ = G["close"]
+            self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
+            glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
 
     def box_css(self):
         return """
@@ -1682,12 +1692,18 @@ class Mono(Theme):
         r2 = y + h - P / 2 - self.ROW / 2 - 2   # buttons and speed
         r1 = r2 - self.ROW                      # seek
         close_x = x + w - P - B
-        return {"r1": r1, "r2": r2, "count": (x + P, r1),
-                "seek": (x + P + 52, r1, w - 2 * P - 52),
-                "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
-                "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
-                "speed": (close_x - 14 - 110, r2, 110),
-                "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
+        G = {"r1": r1, "r2": r2, "count": (x + P, r1),
+             "seek": (x + P + 52, r1, w - 2 * P - 52),
+             "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
+             "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
+             "speed": (close_x - 14 - 110, r2, 110),
+             "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
+        gap_x = x + P + 3 * B + 12 + 6  # after next
+        if G["speed_cycle"][0] < gap_x:  # narrow (#37): no speed slider; the button between next and close, if it fits
+            G["speed"], cw = None, 34
+            G["speed_cycle"] = (gap_x + (close_x - 6 - gap_x - cw) / 2, r2 - B / 2, cw, B) \
+                if close_x - 6 - gap_x >= cw else None
+        return G
 
     def hit_regions(self, card, x, y, w, h, opts=None):
         if not lean_controls(card, opts or {}):
@@ -1696,9 +1712,11 @@ class Mono(Theme):
         hits = {name: (*G[name], B, B) for name in ("prev", "toggle", "next", "close")}
         sx, sy, sw = G["seek"]
         hits["seek"] = (sx, sy - 9, sw, 18)
-        vx, vy, vw = G["speed"]
-        hits["speed"] = (vx, vy - 9, vw, 18)
-        hits["speed_cycle"] = G["speed_cycle"]
+        if G["speed"]:
+            vx, vy, vw = G["speed"]
+            hits["speed"] = (vx, vy - 9, vw, 18)
+        if G["speed_cycle"]:
+            hits["speed_cycle"] = G["speed_cycle"]
         return hits
 
     def _slider(self, cr, x, cy, w, frac, pressed):
@@ -1765,12 +1783,14 @@ class Mono(Theme):
         for name in ("prev", "toggle", "next", "close"):
             g = name if name != "toggle" else ("pause" if playing(card) else "play")
             self._button(cr, *G[name], g, pressed == name)
-        vx, vy, vw = G["speed"]
-        bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
-        self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
-        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-        show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
-        self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
+        if G["speed_cycle"]:
+            bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
+            self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
+            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+            show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
+        if G["speed"]:
+            vx, vy, vw = G["speed"]
+            self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
 
     def box_css(self):
         return """

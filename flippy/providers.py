@@ -130,3 +130,7 @@ class Brain:
     async def write_tips(self, *args, **kwargs):
         await self.start()
         return await self.providers[self.selected].write_tips(*args, **kwargs)
+
+    async def write_text(self, *args, **kwargs):
+        await self.start()
+        return await self.providers[self.selected].write_text(*args, **kwargs)

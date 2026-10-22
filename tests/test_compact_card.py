@@ -72,7 +72,8 @@ class Card(Base):
                 self.ov.clear()
                 self.ov.show_text(SHORT, header="Save", controls=True, steps=["Save", "Close"])
                 hits = self.paint()
-                self.assertTrue({"prev", "toggle", "next", "speed_cycle", "close", "seek"} <= set(hits))
+                self.assertTrue({"prev", "toggle", "next", "speed_cycle", "close"} <= set(hits))
+                self.assertNotIn("seek", hits)  # progress is the step count, no bar
                 (_, _, _, slim), opts = self.ov.card_layout(W, H)
                 theme = themes.get(key)
                 own = theme.card_size(self.ov.card, {**opts, "strip": False})[1]  # its own controls, same width

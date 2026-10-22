@@ -618,9 +618,9 @@ class Theme:
     thought_text = (1, 1, 1, 0.78)
     THOUGHT_SEP = 19                 # between the card's text and the section, a hairline in the middle
 
-    # The slim row of controls a narrow card (compact) has in place of the theme's own (#37): a hairline progress
-    # bar, the step count, prev / play-pause / next, the speed and close, in the theme's ink.
-    STRIP_H = 32
+    # The slim row of controls a narrow card (compact) has in place of the theme's own (#37): prev / play-pause /
+    # next and the speed on the left, the step count ("1/3") and close on the right, in the theme's ink.
+    STRIP_H = 26
     player = False  # draws its controls even when the controls setting says only players do
     slim_controls = False  # its own controls are already one slim line: it keeps them
 
@@ -633,13 +633,10 @@ class Theme:
                 and not card.error and not card.task and (opts.get("controls", "all") == "all" or self.player))
 
     def _strip_geom(self, x, y, w, h):
-        top = y + h - self.STRIP_H
         left, right = x + 14, x + w - 14
-        close = right - 9
-        speed = close - 30
-        ox = min(x + w / 2, speed - 48)  # the transport centered, unless that crowds the speed
-        return {"top": top, "left": left, "right": right, "bar_y": top + 4, "cy": top + 20,
-                "prev": ox - 24, "toggle": ox, "next": ox + 24, "speed": speed, "close": close}
+        prev = left + 6
+        return {"cy": y + h - self.STRIP_H + 13, "right": right,
+                "prev": prev, "toggle": prev + 24, "next": prev + 48, "speed": prev + 78, "close": right - 6}
 
     def strip_hits(self, card, x, y, w, h):
         G = self._strip_geom(x, y, w, h)
@@ -647,28 +644,22 @@ class Theme:
         hits = {name: (G[name] - 11, cy - 11, 22, 22) for name in ("prev", "toggle", "next")}
         hits["speed_cycle"] = (G["speed"] - 13, cy - 10, 26, 20)
         hits["close"] = (G["close"] - 10, cy - 10, 20, 20)
-        hits["seek"] = (G["left"], G["bar_y"] - 4, G["right"] - G["left"], 8)
         return hits
 
     def draw_strip(self, cr, card, x, y, w, h, opts):
         """Draws the slim row at the card's bottom; returns its hit regions."""
         G, ink, pressed = self._strip_geom(x, y, w, h), self.strip_ink, opts.get("pressed")
         font, cy = getattr(self, "font", "Noto Sans"), G["cy"]
-        cr.rectangle(G["left"], G["bar_y"] - 1, G["right"] - G["left"], 2)
-        cr.set_source_rgba(*ink, 0.18)
-        cr.fill()
-        cr.rectangle(G["left"], G["bar_y"] - 1, (G["right"] - G["left"]) * max(0.0, min(card.progress, 1.0)), 2)
-        cr.set_source_rgba(*ink, 0.85)
-        cr.fill()
-        n = max(len(card.steps), 1)
-        count = layout(cr, f"{min(card.step + 1, n)}/{n}", font, 10)
-        show(cr, count, G["left"], cy - lsize(count)[1] / 2, (*ink, 0.55))
         for name in ("prev", "toggle", "next"):
             g = name if name != "toggle" else ("pause" if playing(card) else "play")
             glyph(cr, g, G[name], cy, 5.5 if name == "toggle" else 4.5, (*ink, 1.0 if pressed == name else 0.8))
         sl = layout(cr, f"{card.speed:g}×", font, 10, bold=True)
         sw, sh = lsize(sl)
         show(cr, sl, G["speed"] - sw / 2, cy - sh / 2, (*ink, 1.0 if pressed == "speed_cycle" else 0.7))
+        n = max(len(card.steps), 1)
+        count = layout(cr, f"{min(card.step + 1, n)}/{n}", font, 10)
+        cw, ch = lsize(count)
+        show(cr, count, G["close"] - 10 - 6 - cw, cy - ch / 2, (*ink, 0.55))  # right-aligned, just before close
         glyph(cr, "close", G["close"], cy, 3.5, (*ink, 1.0 if pressed == "close" else 0.6))
         return self.strip_hits(card, x, y, w, h)
 

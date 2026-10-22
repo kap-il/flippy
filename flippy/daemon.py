@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from . import act_memory, errors, history_store, loop, onboarding, placement, settings, setup_gate, themes, tips, updates, video, watch
+from . import act_memory, context, context_store, errors, history_store, loop, onboarding, placement, settings, setup_gate, themes, tips, updates, video, watch
 from .providers import Brain
 from .frames import prepare_frame
 from .requests import Request
@@ -33,6 +33,7 @@ SOCK_PATH = PROFILE.socket
 ASK_TIMEOUT_S = 90
 WORK_AREA_S = 1.0           # longest an answer waits to learn where you're working (a busy app)
 IDLE_RESET_S = 15 * 60      # fresh Claude session after this much idle (keeps context/usage small)
+QUIT_SUMMARY_S = 12         # on quit, how long the session's summary for the context folder may hold it up
 DRAW_TIMEOUT_S = 60         # leave draw mode (and give the mouse back) if nothing happens
 NOT_HERE = "not available on this platform yet (see docs/linux-port.md)"
 TIPS_RETRY_S = 300          # after a failed tip deck write, wait this long before trying again
@@ -126,6 +127,10 @@ class Flippy:
         self.act_question = None
         self.fade_id = 0
         self.last_ask = 0.0
+        self.session = context.Session()  # this session's turns, summed up into the context folder when it ends (#22)
+        self.context_future = None
+        self.brief_due = True             # the next question starts a session: it gets the context folder's brief
+        self.idle_gen = 0
 
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
@@ -148,6 +153,10 @@ class Flippy:
         LISTENERS.append(self.tour.on_event)
         loop.timeout_add(3000, self._maybe_start_tour)
         self._run(self.brain.start(), self._started, provider_bound=True)
+        try:
+            context_store.compact_due()
+        except Exception as e:
+            log(f"context: couldn't compact ({type(e).__name__})")
         self.connection_future = None
         loop.timeout_add(5000, self._connection_tick)
 
@@ -547,12 +556,56 @@ class Flippy:
             answer = (tools.failure or "") if outcome == "stopped" else (result if isinstance(result, str) else "")
             detail = f"{tools.actions} input{'s' if tools.actions != 1 else ''}"
             app = ", ".join(dict.fromkeys(getattr(tools, "app_names", {}).values())) or None
+        if h["question"] != CONTINUE:
+            self.session.add(kind, h["question"], answer if outcome != "error" else "", app or h["app"], h["ts"])
+            self._arm_idle()
         provider = settings.get("provider", "mode")
         try:
             history_store.add(kind, h["question"], answer, steps, app if app is not None else h["app"],
                               provider, outcome, detail, ts=h["ts"])
         except Exception as e:
             log(f"history: couldn't save ({type(e).__name__})")
+
+    # --- the context folder (#22): a session ends after IDLE_RESET_S without a question, on /new, or on quit ---
+    def _arm_idle(self):
+        self.idle_gen += 1
+        gen = self.idle_gen
+        loop.timeout_add(IDLE_RESET_S * 1000, lambda: self._idle(gen) and False)
+
+    def _idle(self, gen):
+        if gen != self.idle_gen or self.quitting:
+            return
+        if self.busy:  # (a long walkthrough or task: the session isn't over)
+            self._arm_idle()
+            return
+        self._end_session()
+
+    def _end_session(self):
+        """Sum up this session's turns into the context folder, in the background. The next question starts fresh
+        and gets the brief."""
+        turns = self.session.take()
+        self.brief_due = True
+        if turns:
+            self.context_future = asyncio.run_coroutine_threadsafe(self._summarize(turns), self.loop)
+
+    async def _summarize(self, turns, timeout=context.SUMMARY_TIMEOUT_S):
+        try:
+            saved = await asyncio.wait_for(context.summarize(self.brain, turns), timeout)
+            log(f"context: {len(turns)} turn(s) -> {len(saved)} task(s)")
+        except asyncio.CancelledError:
+            log("context: summary canceled")
+        except Exception as e:
+            log(f"context: couldn't sum up the session ({type(e).__name__})")  # the type, never content
+
+    async def _summary_done(self, timeout):
+        """Give a session's summary that's still running a moment to finish (so it isn't cut off, and the brief
+        is up to date)."""
+        fut = self.context_future
+        if fut and not fut.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(fut)), timeout)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
 
     def _can_infer_act(self):
         """Can a plain question turn into a desktop task ("play some jazz in Spotify"), without typing /act?
@@ -991,9 +1044,22 @@ class Flippy:
         found = await self._work_area(focus)
         await self._action_main(lambda: (self._note_focus(detail, found), self.overlay.show_text("thinking…", phase="thinking"),
                                          event("thinking")), req)
-        if self.brain.dirty or (self.last_ask and time.monotonic() - self.last_ask > IDLE_RESET_S):
+        idle = self.last_ask and time.monotonic() - self.last_ask > IDLE_RESET_S
+        if idle and self.session.turns:  # the timer didn't get to it (the Mac slept)
+            await self._action_main(self._end_session, req)
+        if self.brain.dirty or idle:
+            await self._summary_done(3)
             await self.brain.reset()
+            self.brief_due = True
         self.last_ask = time.monotonic()
+        h = getattr(req, "history", None)
+        if self.brief_due and h:
+            self.brief_due = False
+            await self._summary_done(3)  # (right after /new, the last session's)
+            try:
+                question = context.brief(h["app"], h["question"]) + question
+            except Exception as e:
+                log(f"context: couldn't read it back ({type(e).__name__})")
         await self._action_main(lambda: self._start_playback(req.identity, frame.size, frame.original_size, frame=frame,
                                                                 asked=True), req)
         raw = await self.brain.ask(question, frame.jpeg, frame.size,
@@ -1302,10 +1368,15 @@ class Flippy:
     def reset_session(self):
         previous = self.request
         self.dismiss()
+        turns = self.session.take()
+        self.brief_due = True
         async def reset():
             if previous and previous.pending:
                 await asyncio.to_thread(previous.drained.wait)
+            await self._summary_done(5)
             await self.brain.reset()
+            if turns:  # after the reset, which would cut a summary off
+                self.context_future = asyncio.run_coroutine_threadsafe(self._summarize(turns), self.loop)
         def begin():
             req = self._begin_request("reset")
             self.overlay.show_text("starting a fresh session…")
@@ -1367,9 +1438,13 @@ class Flippy:
         for future in tuple(self.background_futures):
             future.cancel()
         req = self.request
+        turns = self.session.take()
         async def stop():
             if req and req.pending:
                 await asyncio.to_thread(req.drained.wait)
+            await self._summary_done(QUIT_SUMMARY_S)
+            if turns:
+                await self._summarize(turns, timeout=QUIT_SUMMARY_S)
             await self.brain.stop()
             loop.idle_add(lambda: self.ui.quit() and False)
         asyncio.run_coroutine_threadsafe(stop(), self.loop)

@@ -200,5 +200,101 @@ class Summary(Base):
         brain.write_text.assert_not_called()
 
 
+def daemon_methods(*names, **namespace):
+    tree = ast.parse((Path(__file__).parents[1] / "flippy/daemon.py").read_text())
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Flippy")
+    nodes = [n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), "<daemon>", "exec"), namespace)
+    return type("Daemon", (), {name: namespace[name] for name in names})
+
+
+class SessionEnds(unittest.TestCase):
+    """flippy/daemon.py: the idle timer and the summary in the background."""
+    def setUp(self):
+        self.timers = []
+        queue = SimpleNamespace(timeout_add=lambda ms, fn: self.timers.append((ms, fn)))
+        self.summarize = mock.AsyncMock(return_value=[])
+        cls = daemon_methods("_arm_idle", "_idle", "_end_session", "_summarize", "_summary_done",
+                             asyncio=asyncio, loop=queue, IDLE_RESET_S=900, log=mock.Mock(),
+                             context=SimpleNamespace(summarize=self.summarize, SUMMARY_TIMEOUT_S=90))
+        self.d = cls()
+        self.d.idle_gen, self.d.quitting, self.d.busy, self.d.brief_due = 0, False, False, False
+        self.d.session, self.d.brain, self.d.context_future = context.Session(), object(), None
+        self.d.session.turns = [{"question": "q"}]
+        self.aloop = asyncio.new_event_loop()
+        self.d.loop = self.aloop
+
+    def tearDown(self):
+        self.aloop.close()
+
+    def fire(self, index=-1):
+        ms, fn = self.timers[index]
+        self.assertEqual(ms, 900_000)
+        fn()
+
+    def run_pending(self):
+        self.aloop.run_until_complete(asyncio.sleep(0.01))
+
+    def test_fifteen_idle_minutes_end_the_session(self):
+        self.d._arm_idle()
+        self.fire()
+        self.assertTrue(self.d.brief_due)
+        self.assertEqual(self.d.session.turns, [])
+        self.run_pending()
+        self.summarize.assert_awaited_once_with(self.d.brain, [{"question": "q"}])
+
+    def test_a_newer_question_restarts_the_wait(self):
+        self.d._arm_idle()
+        self.d._arm_idle()
+        self.fire(0)  # the first timer is stale
+        self.assertEqual(self.d.session.turns, [{"question": "q"}])
+        self.fire(1)
+        self.assertEqual(self.d.session.turns, [])
+        self.run_pending()
+
+    def test_not_while_busy_or_quitting(self):
+        self.d._arm_idle()
+        self.d.busy = True
+        self.fire()
+        self.assertEqual(len(self.timers), 2)  # waits again
+        self.assertTrue(self.d.session.turns)
+        self.d.quitting = True
+        self.fire()
+        self.assertTrue(self.d.session.turns)
+
+    def test_a_failed_summary_is_only_logged(self):
+        self.summarize.side_effect = RuntimeError("secret content")
+        self.aloop.run_until_complete(self.d._summarize([{"question": "q"}]))
+        logged = " ".join(str(c) for c in self.d._summarize.__globals__["log"].call_args_list)
+        self.assertIn("RuntimeError", logged)
+        self.assertNotIn("secret content", logged)
+
+    def test_no_turns_no_summary(self):
+        self.d.session.turns = []
+        self.d._end_session()
+        self.assertIsNone(self.d.context_future)
+        self.assertTrue(self.d.brief_due)
+
+
+class Wiring(unittest.TestCase):
+    """Where the daemon calls it: every saved question feeds the session; /new, quit and the first question."""
+    src = (Path(__file__).parents[1] / "flippy/daemon.py").read_text()
+
+    def body(self, name):
+        tree = ast.parse(self.src)
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Flippy")
+        return ast.unparse(next(n for n in cls.body if getattr(n, "name", None) == name))
+
+    def test_hooks(self):
+        self.assertIn("self.session.add(", self.body("_save_history"))
+        self.assertIn("self._arm_idle()", self.body("_save_history"))
+        for name in ("reset_session", "quit"):
+            self.assertIn("self.session.take()", self.body(name), name)
+            self.assertIn("self._summarize(turns", self.body(name), name)
+        ask = self.body("_ask")
+        self.assertIn("context.brief(", ask)
+        self.assertLess(ask.index("brain.reset()"), ask.index("context.brief("))
+
+
 if __name__ == "__main__":
     unittest.main()

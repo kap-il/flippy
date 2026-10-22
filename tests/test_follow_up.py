@@ -67,6 +67,7 @@ def flippy():
     f.play_id = f.fade_id = f.fade_animation_id = 0
     f.followup_token = f.focus_at_open = None
     f.act_hold = None
+    f.session, f.idle_gen = MagicMock(), 0  # the context folder's turns (#22)
     f.overlay = MagicMock(drawing=False, card=None)
     f.box = types.SimpleNamespace(visible=False, show=MagicMock(), hide=MagicMock())
     f.ui = types.SimpleNamespace(screen_size=lambda: (1000, 800), scale=lambda: 1.0)

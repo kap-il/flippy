@@ -31,7 +31,7 @@ DEFAULTS = {
     "look": {
         "theme": "mono",        # see flippy/themes.py
         "pointer": "theme",     # theme | hand | ring | arrow | dot | glass | glasshand
-        "pointer_size": 0.8,    # multiplier (1.0 until config version 3, #37)
+        "pointer_size": 0.6,    # multiplier (1.0 until config version 3, #37): the hand in 2px blocks, was 4px
         "text_size": 13,        # px, answer text (15 until config version 3, #37)
         "card_opacity": 0.94,
         "glass_tint": 0.5,      # 0-1: how strongly Liquid Glass (Glass and Media Player themes, the ask box) is tinted

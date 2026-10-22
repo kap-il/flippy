@@ -29,7 +29,7 @@ class TestMigrate(unittest.TestCase):
 
     def test_v2_old_default_sizes_take_the_smaller_ones(self):
         look = settings._migrate({"version": 2, "look": {"text_size": 15, "pointer_size": 1.0}})["look"]
-        self.assertEqual((look["text_size"], look["pointer_size"]), (13, 0.8))
+        self.assertEqual((look["text_size"], look["pointer_size"]), (13, 0.6))
 
     def test_v2_sizes_someone_picked_are_kept(self):
         look = settings._migrate({"version": 2, "look": {"text_size": 18, "pointer_size": 1.4}})["look"]

@@ -1069,6 +1069,9 @@ class Terminal(Theme):
 
     def draw(self, cr, x, y, w, h, card, t, opts):
         body, head, bar = self._layouts(cr, card, opts)
+        cr.save()
+        round_rect(cr, x, y, w, h, self.R)
+        cr.clip()  # the status bar follows the rounded top
         cr.rectangle(x, y, w, h)
         cr.set_source_rgba(0.01, 0.03, 0.02, opts["card_opacity"])
         cr.fill()
@@ -1076,8 +1079,9 @@ class Terminal(Theme):
         cr.rectangle(x, y, w, bh)
         cr.set_source_rgba(0.05, 0.15, 0.08, 1)
         cr.fill()
+        cr.restore()
         show(cr, bar, x + 10, y + 3, (*self.dim, 1))
-        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
+        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
         cr.set_source_rgba(*self.green, 0.6)
         cr.set_line_width(1)
         cr.stroke()
@@ -1755,7 +1759,7 @@ class Mono(Theme):
         glyph(cr, name, bx + B / 2, by + B / 2, 5 if name != "close" else 4.5, (*self.fg, 1))
 
     def draw(self, cr, x, y, w, h, card, t, opts):
-        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
+        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
         cr.set_source_rgba(*self.bg, opts["card_opacity"])
         cr.fill_preserve()
         cr.set_source_rgba(*self.outline, 1)

@@ -219,6 +219,34 @@ class Page(Base):
         self.assertEqual(context_store.tasks(), [])
         self.assertIn("context", pushed)
 
+    def test_a_summary_saved_off_the_main_thread_reaches_the_page_on_it(self):
+        """A task saved by the background summary updates an open window through the UI thread: WebKit kills the
+        app when it's called from any other (the crash on /new)."""
+        import threading
+        from flippy.shell.window import Window
+
+        class Win(Window):
+            web = object()
+            def __init__(self):
+                super().__init__(host=None, command=lambda c: None, log=lambda m: None)
+                self.evals, self.queued = [], []
+            def _eval(self, script):
+                self.evals.append((threading.current_thread() is threading.main_thread(), script))
+            def _on_main(self, fn):
+                self.queued.append(fn)
+
+        win = Win()
+        self.addCleanup(win.bridge.close)
+        worker = threading.Thread(target=self.make)
+        worker.start()
+        worker.join()
+        self.assertEqual(win.evals, [])
+        self.assertTrue(win.queued)
+        for fn in win.queued:
+            fn()
+        self.assertTrue(win.evals and all(on_main for on_main, _ in win.evals))
+        self.assertIn('"context"', win.evals[0][1])
+
     def test_settings_show_on_the_general_page(self):
         from flippy.shell import schema
         general = next(p for p in schema.pages("darwin") if p["id"] == "general")

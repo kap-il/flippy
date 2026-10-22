@@ -256,6 +256,9 @@ class AppWindow(Window):
     def _eval(self, script):
         self.web.evaluate_javascript(script, -1, None, None, None, None, None)
 
+    def _on_main(self, fn):
+        GLib.idle_add(lambda: fn() and False)
+
 
 def run_standalone(route, command):
     """The window on its own, without the daemon (flippy/shell/__main__.py); returns when it closes."""

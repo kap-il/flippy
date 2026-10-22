@@ -209,3 +209,7 @@ class AppWindow(Window):
 
     def _eval(self, script):
         self.web.evaluateJavaScript_completionHandler_(script, None)
+
+    def _on_main(self, fn):
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(fn)

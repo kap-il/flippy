@@ -31,8 +31,8 @@ DEFAULTS = {
     "look": {
         "theme": "mono",        # see flippy/themes.py
         "pointer": "theme",     # theme | hand | ring | arrow | dot | glass | glasshand
-        "pointer_size": 1.0,    # multiplier
-        "text_size": 15,        # px, answer text
+        "pointer_size": 0.8,    # multiplier (1.0 until config version 3, #37)
+        "text_size": 13,        # px, answer text (15 until config version 3, #37)
         "card_opacity": 0.94,
         "glass_tint": 0.5,      # 0-1: how strongly Liquid Glass (Glass and Media Player themes, the ask box) is tinted
         "glass_color": "smoke", # smoke | blue | purple | pink | red | orange | green | teal: the tint's color
@@ -158,7 +158,7 @@ def remove_allowed_app(bundle_id):
     set("act", "allowed_apps", [app for app in get("act", "allowed_apps") if app != bundle_id])
 
 
-VERSION = 2  # the config file's format; older files are migrated on load (see _migrate)
+VERSION = 3  # the config file's format; older files are migrated on load (see _migrate)
 
 _data = copy.deepcopy(DEFAULTS)
 _listeners = []
@@ -166,15 +166,23 @@ _listeners = []
 
 def _migrate(user):
     """Version 1 -> 2: the glossy media player theme was "glass" and is now "mediaplayer"; the lock-screen
-    style one was "nowplaying" and is now "glass". Its reflections setting moved with it."""
-    if isinstance(user.get("version", 1), int) and user.get("version", 1) >= 2:
-        return user
+    style one was "nowplaying" and is now "glass". Its reflections setting moved with it.
+    Version 2 -> 3 (#37, Flippy made small): answer text and the pointer at the old defaults (15px, 1.0) take the new
+    ones. The file holds every setting, so the old defaults are there whether or not they were picked."""
+    version = user.get("version", 1) if isinstance(user.get("version", 1), int) else 1
     look = user.get("look")
-    if isinstance(look, dict):
+    if not isinstance(look, dict):
+        return user
+    if version < 2:
         if isinstance(look.get("theme"), str):
             look["theme"] = {"glass": "mediaplayer", "nowplaying": "glass"}.get(look["theme"], look["theme"])
         if "glass_shine" in look:
             look["player_shine"] = look.pop("glass_shine")
+    if version < 3:
+        if look.get("text_size") == 15:
+            look["text_size"] = DEFAULTS["look"]["text_size"]
+        if look.get("pointer_size") == 1.0:
+            look["pointer_size"] = DEFAULTS["look"]["pointer_size"]
     return user
 
 

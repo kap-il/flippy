@@ -21,7 +21,10 @@ class Background(unittest.IsolatedAsyncioTestCase):
         self.approved = []
         self.fail_with = None
 
+        self.looks = 0
+
         async def capture():
+            self.looks += 1
             return frame()
 
         async def approve(name, args, shot):
@@ -46,29 +49,71 @@ class Background(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([n for n, _ in self.done], ["press", "set_text", "menu"])
         self.assertEqual(self.tools.actions, 3)
 
-    async def test_press_many_presses_each_from_the_same_look_in_one_step(self):
+    async def test_do_steps_runs_the_whole_sequence_in_one_call(self):
         await self.tools.invoke("look", {})
-        shots = []
-        perform = self.tools.perform
-        async def record(name, args, shot, cancel):
-            shots.append(shot)
-            await perform(name, args, shot, cancel)
-        self.tools.perform = record
-        r = await self.tools.invoke("press_many", {"elements": [2, 1, 2], "reason": "keypad"})
+        r = await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2},
+                                                           {"tool": "set_text", "element": 1, "text": "hi"},
+                                                           {"tool": "key", "combo": "cmd+s"},
+                                                           {"tool": "remember", "how": "save with cmd+s"}],
+                                                 "reason": "write and save"})
         self.assertNotIn("is_error", r)
-        self.assertEqual([(n, a["element"]) for n, a in self.done], [("press", 2), ("press", 1), ("press", 2)])
-        self.assertEqual(len({id(s) for s in shots}), 1)  # numbers from one look, even if the app changes between
-        self.assertEqual((self.approved, self.tools.actions, self.tools.timing["steps"]), (["press_many"], 3, 2))
+        self.assertTrue(r["content"][0]["text"].startswith("Did all 4 steps"))
+        self.assertIn("App: TextEdit", r["content"][1]["text"])  # the app after the last step
+        self.assertEqual([(n, a.get("reason")) for n, a in self.done],
+                         [("press", "write and save"), ("set_text", "write and save"), ("key", "write and save")])
+        self.assertEqual((self.approved, self.tools.actions), (["press", "set_text", "key"], 3))
+        self.assertEqual(self.tools.timing["steps"], 2)  # one model turn for all of it
+        self.assertEqual(self.looks, 2)  # the look before and one after the last step, none in between
+        self.assertEqual(list(self.tools.notes.values()), ["save with cmd+s"])
 
-    async def test_press_many_checks_every_number_first(self):
+    async def test_the_app_gets_time_to_redraw_only_before_a_look(self):
+        from unittest.mock import AsyncMock, patch
+        from flippy import actions
+        self.tools.settle = 0.25
         await self.tools.invoke("look", {})
-        r = await self.tools.invoke("press_many", {"elements": [2, 99], "reason": "keypad"})
+        with patch.object(actions.asyncio, "sleep", AsyncMock()) as sleep:
+            await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2}] * 5, "reason": "x"})
+            self.assertEqual(sleep.await_args_list, [((0.25,),)])  # once, before the look after the 5th
+            await self.tools.invoke("look", {})
+            self.assertEqual(sleep.await_count, 1)  # a look on its own doesn't wait
+
+    async def test_do_steps_stops_at_the_first_step_not_done(self):
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("do_steps", {"steps": [{"tool": "press", "element": 2},
+                                                           {"tool": "press", "element": 99},
+                                                           {"tool": "press", "element": 2}], "reason": "x"})
         self.assertTrue(r["is_error"])
-        self.assertEqual(self.done, [])  # nothing pressed when one number is wrong
-        self.tools.max_actions = 2
-        r = await self.tools.invoke("press_many", {"elements": [2, 2, 2], "reason": "keypad"})
-        self.assertTrue(r["is_error"])
+        self.assertIn("Did 1 of 3 steps. Step 2 (press)", r["content"][0]["text"])
+        self.assertEqual(len(self.done), 1)
+        self.assertFalse(self.tools.cancel.is_set())  # Claude decides what next
+
+    async def test_do_steps_runs_only_its_tools(self):
+        await self.tools.invoke("look", {})
+        for steps in ([{"tool": "click", "x": 1, "y": 1}], [{"tool": "use_app", "name": "Notes"}], ["press"], []):
+            r = await self.tools.invoke("do_steps", {"steps": steps, "reason": "x"})
+            self.assertTrue(r["is_error"], steps)
         self.assertEqual(self.done, [])
+
+    async def test_a_control_keeps_its_number_as_the_app_changes(self):
+        looks = iter([
+            "App: Calculator\n[1] text '0' (0,0 90x20)\n[2] button '7' (0,30 20x20) [press]\n[3] button '=' (60,30 20x20) [press]",
+            "App: Calculator\n[1] text '7' (0,0 90x20)\n[2] button 'AC' (0,60 20x20) [press]\n[3] button '7' (0,30 20x20) [press]"
+            "\n[4] button '=' (60,30 20x20) [press]",
+        ])
+        def capture():
+            text = next(looks)
+            n = text.count("\n[")
+            return asyncio.sleep(0, AppFrame("j", (100, 100), TARGET, {i: (f"el{i}", "AXButton", f"c{i}", [], False)
+                                                                        for i in range(1, n + 1)}, text))
+        self.tools.capture = capture
+        await self.tools.invoke("look", {})
+        r = await self.tools.invoke("press", {"element": 2, "reason": "7"})
+        text = r["content"][0]["text"]
+        self.assertIn("[2] button '7'", text)   # still 2, though the app listed it 3rd
+        self.assertIn("[3] button '='", text)
+        self.assertIn("[5] button 'AC'", text)  # new controls get new numbers
+        self.assertIn("[4] text '7'", text)     # (the display's text is its label: a new control)
+        self.assertEqual(self.tools.snapshot.elements[2][0], "el3")  # number 2 presses the real '7'
 
     async def test_use_app_first_needs_no_look(self):
         r = await self.tools.invoke("use_app", {"name": "TextEdit", "reason": "open it"})
@@ -190,11 +235,6 @@ class Describe(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class PressManyCard(unittest.TestCase):
-    def test_the_card_names_each_control(self):
-        self.assertIn("press 'Save', 'body'", frame().describe("press_many", {"elements": [2, 1], "reason": "r"}))
 
 
 class StopAndWording(unittest.TestCase):

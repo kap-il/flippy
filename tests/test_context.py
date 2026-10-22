@@ -200,6 +200,33 @@ class Summary(Base):
         brain.write_text.assert_not_called()
 
 
+class Page(Base):
+    """The History page's Ongoing tasks (flippy/shell/bridge.py) and the Memory settings (schema)."""
+    def test_list_rename_forget(self):
+        from flippy.shell import bridge
+        pushed = []
+        b = bridge.Bridge(push=lambda event, data: pushed.append(event))
+        self.addCleanup(b.close)
+        task = self.make()
+        r = b.handle({"id": 1, "op": "context_list"})["result"]
+        self.assertEqual(r["tasks"][0]["log"][0]["text"], "set up sidechain")
+        self.assertEqual((r["keep"], r["days"]), (True, 90))
+        self.assertTrue(b.handle({"id": 2, "op": "context_rename", "args": {"id": task["id"], "title": "EP"}})["ok"])
+        self.assertEqual(context_store.get(task["id"])["title"], "EP")
+        self.assertFalse(b.handle({"id": 3, "op": "context_rename", "args": {"id": task["id"], "title": " "}})["ok"])
+        self.assertFalse(b.handle({"id": 4, "op": "context_rename", "args": {"id": "../x", "title": "y"}})["ok"])
+        b.handle({"id": 5, "op": "context_delete", "args": {"id": task["id"]}})
+        self.assertEqual(context_store.tasks(), [])
+        self.assertIn("context", pushed)
+
+    def test_settings_show_on_the_general_page(self):
+        from flippy.shell import schema
+        general = next(p for p in schema.pages("darwin") if p["id"] == "general")
+        memory = next(g for g in general["groups"] if g["title"] == "Memory")
+        self.assertEqual([f["id"] for f in memory["fields"]], ["context.keep", "context.compact_days", "context.skip_apps"])
+        self.assertEqual(memory["fields"][1]["unit"], "days")
+
+
 def daemon_methods(*names, **namespace):
     tree = ast.parse((Path(__file__).parents[1] / "flippy/daemon.py").read_text())
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Flippy")

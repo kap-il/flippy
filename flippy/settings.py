@@ -61,6 +61,11 @@ DEFAULTS = {
         "keep": True,             # save what you ask and what Flippy did (text only, never screenshots)
         "days": 30,               # then it's deleted
     },
+    "context": {                  # the context folder (#22, flippy/context_store.py): ongoing tasks, picked back up
+        "keep": True,             # sum up each session's tasks and read them back next time (text only)
+        "compact_days": 90,       # a task not picked up for this long is shrunk to a few lines
+        "skip_apps": "1Password, Bitwarden, Keychain Access, Passwords",  # never remembered (app names)
+    },
     "window": {
         "mode": "system",       # the app window (history, setup, settings): system | light | dark
     },
@@ -126,6 +131,7 @@ _BOUNDS = {
     ('timing', 'speed'): (0.5, 2.0, 0.05, 2),
     ('timing', 'glide_seconds'): (0.2, 2.0, 0.1, 1),
     ('history', 'days'): (1, 365, 1, 0),
+    ('context', 'compact_days'): (7, 365, 1, 0),
 }
 SETTINGS = {
     (section, key): Setting(value, tuple(_OPTIONS.get((section, key), ())),

@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from .. import history_store, settings
+from .. import context_store, history_store, settings
 from . import appearance, schema, setup
 
 COMMANDS = {"preview", "reset", "update"}  # daemon commands the page may ask for
@@ -119,13 +119,18 @@ class Bridge:
         self._mark = None
         settings.on_change(self._changed)
         history_store.on_change(self._history_changed)
+        context_store.on_change(self._context_changed)
 
     def close(self):
         settings.off_change(self._changed)
         history_store.off_change(self._history_changed)
+        context_store.off_change(self._context_changed)
 
     def _history_changed(self):
         self.push("history", None)
+
+    def _context_changed(self):
+        self.push("context", None)
 
     def _changed(self, section, key, *_):
         if (section, key) in settings.SETTINGS and (f := schema.field(section, key)) is not None:
@@ -217,6 +222,21 @@ class Bridge:
 
     def op_history_clear(self):
         history_store.clear()
+
+    # ---- the context folder (flippy/context_store.py): ongoing tasks, on the History page
+    def op_context_list(self):
+        tasks = [{**t, "log": [{"day": day, "text": text} for day, text in t["log"]]} for t in context_store.tasks()]
+        return {"tasks": tasks, "keep": settings.get("context", "keep"), "days": settings.get("context", "compact_days")}
+
+    def op_context_rename(self, id, title):  # noqa: A002
+        if not isinstance(title, str) or not title.strip() or context_store.rename(str(id), title) is None:
+            raise ValueError("Couldn't rename it.")
+
+    def op_context_delete(self, id):  # noqa: A002
+        context_store.delete(str(id))
+
+    def op_context_clear(self):
+        context_store.clear()
 
     def op_route(self, route):
         self.current = str(route)[:100]

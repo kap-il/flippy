@@ -627,6 +627,9 @@ class CodexProvider:
         text = await self._run(TIPS_PROMPT, [{"type": "text", "text": question}])
         return parse_tips(text)
 
+    async def write_text(self, system, text):
+        return await self._run(system, [{"type": "text", "text": text}])
+
 
 def _new_enough(version_line):
     """"codex-cli 0.159.2" -> True when it's SUPPORTED_VERSION or newer."""

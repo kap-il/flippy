@@ -11,7 +11,7 @@ from .. import settings
 
 # page id, title, icon, and its groups: (group title or None, [sections])
 PAGES = [
-    ("general", "General", "gear", [(None, ["provider", "updates"]), ("History", ["history"]), ("Scripting", ["automation"])]),
+    ("general", "General", "gear", [(None, ["provider", "updates"]), ("History", ["history"]), ("Memory", ["context"]), ("Scripting", ["automation"])]),
     ("appearance", "Appearance", "sun", [(None, ["window", "look"])]),  # laid out by the page (appearance.js)
     ("models", "Models", "sparkle", [("Claude", ["claude"]), ("Codex / ChatGPT", ["codex"])]),
     ("tasks", "Desktop tasks", "cursor", [(None, ["act"])]),
@@ -30,6 +30,11 @@ LABELS = {
                                "program running as you can make Flippy click. Separate from task approvals.", ("darwin",)),
     ("history", "keep"): ("Keep history", "Save what you ask and what Flippy did, as text. Never screenshots.", None),
     ("history", "days"): ("Keep for", "Days, then it's deleted.", None),
+    ("context", "keep"): ("Remember ongoing tasks", "When a session ends, Flippy notes where you are in each task and "
+                          "picks it up next time. Text only, on this computer.", None),
+    ("context", "compact_days"): ("Shrink tasks after", "Days without picking a task up. Flippy never decides a task "
+                                  "is done.", None),
+    ("context", "skip_apps"): ("Never remember", "App names, comma-separated.", None),
     ("window", "mode"): ("Mode", "This window follows the system, or stays light or dark.", None),
     ("look", "theme"): ("Theme", "How answer cards look.", None),
     ("look", "pointer"): ("Pointer", None, None),
@@ -76,7 +81,7 @@ NEEDS = {("look", "frosted"): "blur"}
 # Two-value choices shown as a switch: (value when on, value when off).
 SWITCHES = {("look", "controls"): ("all", "players")}
 UNITS = {("look", "text_size"): "pt", ("timing", "show_seconds"): "s", ("timing", "max_show_seconds"): "s",
-         ("timing", "glide_seconds"): "s", ("history", "days"): "days", ("timing", "speed"): "×", ("look", "pointer_size"): "×"}
+         ("timing", "glide_seconds"): "s", ("history", "days"): "days", ("context", "compact_days"): "days", ("timing", "speed"): "×", ("look", "pointer_size"): "×"}
 
 
 # Rows that do something instead of holding a setting, by page: a button that runs a bridge op, or a key to know.

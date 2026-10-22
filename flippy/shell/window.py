@@ -2,6 +2,7 @@
 bridge, the route, JSON both ways; and AppHost, the Platform side that opens the one window (flippy/mac/ui.py,
 flippy/linux/ui.py)."""
 import json
+import threading
 
 from .bridge import MAX_MESSAGE, Bridge
 
@@ -39,8 +40,16 @@ class Window:
         self._js("window.flippy.event", event, data)
 
     def _js(self, fn, *args):
-        if self.web is not None:
-            self._eval(f"{fn}({', '.join(json.dumps(a) for a in args)})")
+        script = f"{fn}({', '.join(json.dumps(a) for a in args)})"
+        if threading.current_thread() is threading.main_thread():
+            if self.web is not None:
+                self._eval(script)
+        else:  # a store changed off the main thread (the context folder's summary): WebKit is main-thread only
+            self._on_main(lambda: self.web is not None and self._eval(script))
+
+    def _on_main(self, fn):
+        """Run fn on the UI thread soon (each platform's AppWindow)."""
+        raise NotImplementedError
 
 
 class AppHost:

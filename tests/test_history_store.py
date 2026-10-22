@@ -77,10 +77,11 @@ class DaemonRemembers(unittest.TestCase):
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Flippy")
         node = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "_save_history")
         self.store = mock.Mock()
-        ns = {"segments": segments, "history_store": self.store, "log": mock.Mock(),
+        ns = {"segments": segments, "history_store": self.store, "log": mock.Mock(), "CONTINUE": "continue",
               "settings": SimpleNamespace(get=lambda s, k: "claude")}
         exec(compile(ast.Module(body=[node], type_ignores=[]), "<remember>", "exec"), ns)
-        return ns["_save_history"], SimpleNamespace
+        self.daemon = SimpleNamespace(session=mock.Mock(), _arm_idle=mock.Mock())
+        return lambda _self, *args, **kwargs: ns["_save_history"](self.daemon, *args, **kwargs), SimpleNamespace
 
     def test_answer_steps_without_tags(self):
         remember, NS = self.remember()

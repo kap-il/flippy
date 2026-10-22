@@ -214,6 +214,27 @@ class Brain:
             raise BrainError("Tip generation ended without a completed response.")
         return parse_tips("".join(parts))
 
+    async def write_text(self, system: str, text: str) -> str:
+        """One text-only call outside the conversation (the context folder's session summary, flippy/context.py)."""
+        opts = replace(self.options, system_prompt=system, effort="low", include_partial_messages=False,
+                       extra_args=dict(NO_TRANSCRIPTS))
+        GUARDS["claude"].check()
+        parts, completed = [], False
+        async for msg in query(prompt=text, options=opts):
+            if isinstance(msg, RateLimitEvent):
+                self._usage(msg)
+            elif isinstance(msg, AssistantMessage):
+                if getattr(msg, "error", None):
+                    raise BrainError(str(msg.error), kind=str(msg.error))
+                parts.extend(b.text for b in msg.content if isinstance(b, TextBlock))
+            elif isinstance(msg, ResultMessage):
+                if msg.is_error or msg.subtype != "success":
+                    raise BrainError(msg.result or msg.subtype or "unknown error")
+                completed = True
+        if not completed:
+            raise BrainError("The response ended before completion.", kind="incomplete")
+        return "".join(parts)
+
     async def ask(self, question: str, b64_jpeg: str, img_size: tuple[int, int],
                   on_text=None, extra_images=()) -> str:
         """One serialized tutor/video turn; cancellation discards its transport."""

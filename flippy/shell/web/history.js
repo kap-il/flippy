@@ -3,6 +3,7 @@
 "use strict";
 const F = window.F, el = F.el;
 let entries = [], keep = true, days = 30, more = false, query = "", open = new Set(), list = null, typing = null;
+let tasks = [], remember = true, openTasks = new Set(), taskBox = null;  // the context folder (#22)
 
 const DAY = 86400000;
 function dayLabel(ts) {
@@ -21,6 +22,65 @@ async function load(append) {
   entries = append ? entries.concat(r.entries) : r.entries;
   keep = r.keep; days = r.days; more = r.entries.length === 50;
   draw();
+}
+
+// Ongoing tasks Flippy remembers across sessions (flippy/context_store.py): read, rename, delete.
+async function loadTasks() {
+  const r = await F.call("context_list");
+  tasks = r.tasks; remember = r.keep;
+  drawTasks();
+}
+
+function renameTask(t) {
+  F.dialog((sheet, close) => {
+    const input = el("input", { type: "text", class: "find", value: t.title, maxlength: "80", style: "width:100%", "aria-label": "Task name",
+      onkeydown: (e) => { if (e.key === "Enter") save(); } });
+    const save = async () => {
+      try { await F.call("context_rename", { id: t.id, title: input.value }); close(); loadTasks(); }
+      catch (err) { F.toast(err.message); }
+    };
+    sheet.append(el("h3", {}, "Rename task"), input,
+      el("div", { class: "actions" }, el("button", { class: "btn quiet", onclick: close }, "Cancel"),
+        el("button", { class: "btn primary", onclick: save }, "Rename")));
+  });
+}
+
+function taskRow(t) {
+  const isOpen = openTasks.has(t.id);
+  const day = new Date(t.updated.slice(0, 10) + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const meta = [t.apps.join(", "), `last ${day}`].filter(Boolean).join("  ·  ");
+  const row = el("div", { class: "entry" + (isOpen ? " open" : "") });
+  row.append(el("button", { class: "entry-head", "aria-expanded": String(isOpen),
+    onclick: () => { isOpen ? openTasks.delete(t.id) : openTasks.add(t.id); row.replaceWith(taskRow(t)); } },
+    el("span", { class: "kind", html: icon("history") }),
+    el("span", { class: "q" }, el("span", { class: "label" }, t.title),
+      el("span", { class: "meta" }, t.compacted ? meta : (t.where || meta))),
+    t.compacted ? el("span", { class: "tag", title: "Not picked up for a while, so shrunk to a few lines" }, "Shrunk") : null,
+    F.svg("right")));
+  if (isOpen) {
+    const body = el("div", { class: "entry-body" });
+    if (!t.compacted && t.where) body.append(el("p", { class: "answer" }, el("b", {}, "Where you are: "), t.where));
+    const lines = t.compacted ? t.summary : t.log.slice().reverse().map((l) => `${l.day}: ${l.text}`);
+    if (lines.length) body.append(el("ol", { class: "steps" }, lines.map((s) => el("li", {}, s))));
+    if (t.apps.length) body.append(el("p", { class: "answer muted" }, t.apps.join(", ")));
+    body.append(el("div", { class: "entry-actions" },
+      el("button", { class: "btn quiet", onclick: () => renameTask(t) }, F.svg("rename"), "Rename"),
+      el("button", { class: "btn quiet danger", onclick: async () => { await F.call("context_delete", { id: t.id }); loadTasks(); } },
+        F.svg("trash"), "Forget")));
+    row.append(body);
+  }
+  return row;
+}
+
+function drawTasks() {
+  if (!taskBox || !taskBox.isConnected) return;
+  taskBox.replaceChildren();
+  if (query || !remember || !tasks.length) return;  // (searching is for questions; the switch and empty say nothing)
+  const forget = el("button", { class: "btn quiet", style: "font-weight:400", onclick: () => F.confirm("Forget every task?",
+    "Flippy deletes its notes on your ongoing tasks. Your question history stays.", "Forget all",
+    async () => { await F.call("context_clear"); openTasks.clear(); loadTasks(); F.toast("Tasks forgotten"); }) }, "Forget all");
+  taskBox.append(el("h2", {}, "Ongoing tasks", el("span", { class: "spacer" }), forget),
+    el("div", { class: "card entries" }, tasks.map(taskRow)));
 }
 
 function entryRow(e) {
@@ -79,19 +139,24 @@ function draw() {
 
 F.renderHistory = () => {
   const search = el("input", { type: "text", class: "find", placeholder: "Search history", value: query, spellcheck: "false", "aria-label": "Search history",
-    oninput: (e) => { query = e.target.value.trim(); clearTimeout(typing); typing = setTimeout(load, 180); } });
+    oninput: (e) => { query = e.target.value.trim(); clearTimeout(typing); typing = setTimeout(() => { load(); drawTasks(); }, 180); } });
   const clear = el("button", { class: "btn quiet", onclick: () => F.confirm("Clear all history?", "Every saved question and answer is deleted from this computer.",
     "Clear all", async () => { await F.call("history_clear"); open.clear(); load(); F.toast("History cleared"); }) }, F.svg("trash"), "Clear all");
   list = el("div", { class: "history" });
+  taskBox = el("div", { class: "history tasks" });
   const wrap = el("div", { class: "content" },
     el("div", { class: "page-head" }, el("h1", {}, "History"), el("div", { class: "head-tools" }, search, clear)),
-    list,
+    taskBox, list,
     el("p", { class: "fineprint" }, "Saved on this computer as text, never screenshots. ",
       el("a", { href: "#settings/general", onclick: (ev) => { ev.preventDefault(); F.go("settings/general", "history.keep"); } }, "History settings")));
   load();
+  loadTasks();
   return wrap;
 };
 const reload = () => { if (location.hash.slice(1) === "history") load(); };
+const reloadTasks = () => { if (location.hash.slice(1) === "history") loadTasks(); };
 F.on("history", reload);
 F.on("field:history.keep", reload);
+F.on("context", reloadTasks);
+F.on("field:context.keep", reloadTasks);
 })();

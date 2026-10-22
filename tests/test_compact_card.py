@@ -1,5 +1,6 @@
 """Answers in a card as narrow as the question box (#37): every theme draws at that width with its controls inside and
-apart, and the pointer glides out from the mouse rather than dropping in where it points."""
+apart; the pointer glides out from the mouse rather than dropping in where it points; and thinking, and answers that
+don't point, show by the mouse."""
 import unittest
 from unittest.mock import patch
 
@@ -94,6 +95,49 @@ class Glide(Base):
         self.ov.pos, self.ov.move_from = (20, 10), None  # arrived
         self.ov.point(1400, 10, "Clock")
         self.assertEqual(self.ov.move_from, (20, 10))
+
+
+class ByTheMouse(Base):
+    def rect(self):
+        return self.ov.card_layout(W, H)[0]
+
+    def test_thinking_shows_by_the_mouse_and_moves_with_it(self):
+        self.ov.at = (700, 500)
+        self.ov.show_text("thinking…", phase="thinking")
+        x, y, _, _ = self.rect()
+        self.assertEqual((x, y), (700 + overlay.MOUSE_GAP, 500 + overlay.MOUSE_GAP + 8))
+        self.ov.at = (300, 200)
+        x, y, _, _ = self.rect()
+        self.assertEqual((x, y), (300 + overlay.MOUSE_GAP, 200 + overlay.MOUSE_GAP + 8))
+
+    def test_an_answer_that_does_not_point_stays_where_it_showed(self):
+        self.ov.at = (700, 500)
+        self.ov.show_text("thinking…", phase="thinking")
+        self.rect()
+        self.ov.show_text(SHORT, controls=True)  # [POINT:none]: no pointer to ride with
+        before = self.rect()
+        self.ov.at = (300, 200)  # reaching for its controls
+        self.assertEqual(self.rect(), before)
+
+    def test_left_of_and_above_the_mouse_near_the_edges(self):
+        self.ov.at = (W - 20, H - 20)
+        self.ov.show_text(LONG, controls=True)
+        x, y, w, h = self.rect()
+        self.assertLessEqual(x + w, W - 20)
+        self.assertLessEqual(y + h, H - 20)
+
+    def test_once_it_points_it_rides_with_the_pointer(self):
+        self.ov.at = (700, 500)
+        self.ov.show_text("thinking…", phase="thinking")
+        self.ov.point(20, 10, "Apple menu")
+        self.ov.show_text("The Apple menu.", header="Apple menu", follow=True, controls=True)
+        self.assertEqual(self.ov.card_mode, "follow")
+
+    def test_at_the_top_where_the_mouse_is_unknown(self):
+        self.ov.show_text("thinking…", phase="thinking")
+        self.assertEqual(self.ov.card_mode, "top")
+        _, y, _, _ = self.rect()
+        self.assertEqual(y, self.ov.card_margin_top)
 
 
 if __name__ == "__main__":

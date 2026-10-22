@@ -67,7 +67,13 @@ def frac_to_speed(frac):
 def lean_controls(card, opts):
     """Controls on the non-player themes: answers only, and only if enabled in settings."""
     return (card.controls and opts.get("controls", "all") == "all"
-            and card.phase != "thinking" and not card.error)
+            and card.phase != "thinking" and not card.error and not opts.get("strip"))
+
+
+def no_player(card, opts):
+    """The player themes (Media Player, Glass) draw no controls of their own: nothing to play yet, a desktop task, or
+    the slim row in their place (Theme.draw_strip)."""
+    return card.phase == "thinking" or card.task or bool(opts and opts.get("strip"))
 
 
 def compact(opts):
@@ -107,7 +113,7 @@ def pin_glyph(cr, cx, cy, s, rgba, pinned):
 THOUGHT_FONT = "Noto Sans"
 
 
-THOUGHT_LINES = 8   # open, the section shows at most this many lines: the latest of a long trail
+THOUGHT_LINES = 4   # open, the section shows at most this many lines: the latest of a long trail (8 before #37)
 FOLDED_CHARS = 200  # folded, one line never shows more than this
 
 
@@ -612,8 +618,55 @@ class Theme:
     thought_text = (1, 1, 1, 0.78)
     THOUGHT_SEP = 19                 # between the card's text and the section, a hairline in the middle
 
+    # The slim row of controls a narrow card (compact) has in place of the theme's own (#37): prev / play-pause /
+    # next and the speed on the left, the step count ("1/3") and close on the right, in the theme's ink.
+    STRIP_H = 26
+    player = False  # draws its controls even when the controls setting says only players do
+    slim_controls = False  # its own controls are already one slim line: it keeps them
+
+    @property
+    def strip_ink(self):
+        return getattr(self, "fg", (1, 1, 1))
+
+    def strip_on(self, card, opts):
+        return (compact(opts) and not self.slim_controls and card.controls and card.phase != "thinking"
+                and not card.error and not card.task and (opts.get("controls", "all") == "all" or self.player))
+
+    def _strip_geom(self, x, y, w, h):
+        left, right = x + 14, x + w - 14
+        prev = left + 6
+        return {"cy": y + h - self.STRIP_H + 13, "right": right,
+                "prev": prev, "toggle": prev + 24, "next": prev + 48, "speed": prev + 78, "close": right - 6}
+
+    def strip_hits(self, card, x, y, w, h):
+        G = self._strip_geom(x, y, w, h)
+        cy = G["cy"]
+        hits = {name: (G[name] - 11, cy - 11, 22, 22) for name in ("prev", "toggle", "next")}
+        hits["speed_cycle"] = (G["speed"] - 13, cy - 10, 26, 20)
+        hits["close"] = (G["close"] - 10, cy - 10, 20, 20)
+        return hits
+
+    def draw_strip(self, cr, card, x, y, w, h, opts):
+        """Draws the slim row at the card's bottom; returns its hit regions."""
+        G, ink, pressed = self._strip_geom(x, y, w, h), self.strip_ink, opts.get("pressed")
+        font, cy = getattr(self, "font", "Noto Sans"), G["cy"]
+        for name in ("prev", "toggle", "next"):
+            g = name if name != "toggle" else ("pause" if playing(card) else "play")
+            glyph(cr, g, G[name], cy, 5.5 if name == "toggle" else 4.5, (*ink, 1.0 if pressed == name else 0.8))
+        sl = layout(cr, f"{card.speed:g}×", font, 10, bold=True)
+        sw, sh = lsize(sl)
+        show(cr, sl, G["speed"] - sw / 2, cy - sh / 2, (*ink, 1.0 if pressed == "speed_cycle" else 0.7))
+        n = max(len(card.steps), 1)
+        count = layout(cr, f"{min(card.step + 1, n)}/{n}", font, 10)
+        cw, ch = lsize(count)
+        show(cr, count, G["close"] - 10 - 6 - cw, cy - ch / 2, (*ink, 0.55))  # right-aligned, just before close
+        glyph(cr, "close", G["close"], cy, 3.5, (*ink, 1.0 if pressed == "close" else 0.6))
+        return self.strip_hits(card, x, y, w, h)
+
     def card_size(self, card, opts):
         w, h = self.size(card, opts)
+        if opts.get("strip"):
+            h += self.STRIP_H
         if card.task and card.thought:  # a theme that fits its card to the text ("Done.") still leaves room to read
             w = max(w, self._w(card, opts))
         if card.actions:
@@ -639,7 +692,7 @@ class Theme:
         inset, a = self.thought_inset, opts["card_opacity"]
         rows = _action_layouts(cr, card, opts)
         rh = action_row_height(card, opts)
-        top = y + h - self.controls_height(card, opts) - rh - 6
+        top = y + h - (self.STRIP_H if opts.get("strip") else self.controls_height(card, opts)) - rh - 6
         hits, bx = {}, x + w - inset
         for name, lay, caps in reversed(rows):
             lw, lh = lsize(lay)
@@ -783,8 +836,7 @@ class Midnight(Theme):
     def _mgeom(self, x, y, w, h, card):
         cy = y + h - self.CTRL_H / 2 - 4
         px0 = x + w - 16 - 122
-        n = len(card.steps)
-        return {"cy": cy, "n": n if x + 22 + (n - 1) * 14 + 5 <= px0 - 12 else 0, "dot0": x + 22,  # dots if they fit
+        return {"cy": cy, "n": len(card.steps), "dot0": x + 22,
                 "prev": (px0 + 14, cy), "toggle": (px0 + 42, cy), "next": (px0 + 70, cy),
                 "chip": (px0 + 86, cy - 10, 36, 20)}
 
@@ -905,10 +957,9 @@ class Cosmic(Midnight):
     def _cgeom(self, x, y, w, h):
         row = y + h - self.CTRL_H - 2
         ox, cy = x + w / 2, row + 46
-        gap, chip = (48, (x + 16, cy - 12, 42, 24)) if w >= 260 else (36, (x + 10, cy - 12, 30, 24))  # narrow (#37)
         return {"row": row, "cy": cy, "x0": x + 18, "x1": x + w - 18,
-                "prev": (ox - gap, cy), "toggle": (ox, cy), "next": (ox + gap, cy),
-                "chip": chip, "close": (x + w - 16 - 24, cy - 12, 24, 24)}
+                "prev": (ox - 48, cy), "toggle": (ox, cy), "next": (ox + 48, cy),
+                "chip": (x + 16, cy - 12, 42, 24), "close": (x + w - 16 - 24, cy - 12, 24, 24)}
 
     def _draw_controls(self, cr, x, y, w, h, card, opts):
         G = self._cgeom(x, y, w, h)
@@ -977,22 +1028,21 @@ window.flippy-box entry {{ font-size: 16px; }}
 window.flippy-box .flippy-hint {{ color: {css(self.fg, 0.5)}; font-size: 12px; }}"""
 
 
+TERMINAL_GREEN = (0.55, 0.93, 0.42)  # #8ced6b: a softer, yellower phosphor green (was #40ff73); the macOS box uses it
+
+
 class Terminal(Theme):
     key, name = "terminal", "Terminal"
-    thought_inset, thought_label, thought_text = 14, (0.25, 1.0, 0.45), (0.25, 1.0, 0.45, 0.7)
+    thought_inset, thought_label, thought_text = 14, TERMINAL_GREEN, (*TERMINAL_GREEN, 0.7)
     pointer = "arrow"
     hand_fill = (0.0, 0.0, 0.0)
-    hand_outline = (0.2, 1.0, 0.4)
-    accent = (0.2, 1.0, 0.4)
-    tap = (0.2, 1.0, 0.4)
-    pen = (0.2, 1.0, 0.4)
-    green = (0.25, 1.0, 0.45)
-    dim = (0.15, 0.6, 0.3)
+    hand_outline = accent = tap = pen = green = TERMINAL_GREEN
+    slim_controls = True  # its status line, [<<][||][>>][x] 1x 1/3, is slimmer than the shared row
+    dim = (0.34, 0.57, 0.26)
     font = "Fira Mono"
     placeholder = "$ ask "
     widths = (380, 540)
     pad_w = 28  # 14 each side of the text (size)
-    R = 10      # softened corners, like the question box's (#37)
 
     def _layouts(self, cr, card, opts):
         px = opts["text_size"] - 1
@@ -1043,7 +1093,7 @@ class Terminal(Theme):
             w = opts["card_w"]
         return w, h
 
-    pin_rgba = (0.25, 1.0, 0.45, 1)
+    pin_rgba = (*TERMINAL_GREEN, 1)
     pin_size = 6
 
     def _bar_h(self, opts):
@@ -1069,19 +1119,15 @@ class Terminal(Theme):
 
     def draw(self, cr, x, y, w, h, card, t, opts):
         body, head, bar = self._layouts(cr, card, opts)
-        cr.save()
-        round_rect(cr, x, y, w, h, self.R)
-        cr.clip()  # the status bar follows the rounded top
         cr.rectangle(x, y, w, h)
-        cr.set_source_rgba(0.01, 0.03, 0.02, opts["card_opacity"])
+        cr.set_source_rgba(0.03, 0.03, 0.01, opts["card_opacity"])
         cr.fill()
         bh = lsize(bar)[1] + 6
         cr.rectangle(x, y, w, bh)
-        cr.set_source_rgba(0.05, 0.15, 0.08, 1)
+        cr.set_source_rgba(0.10, 0.14, 0.06, 1)
         cr.fill()
-        cr.restore()
         show(cr, bar, x + 10, y + 3, (*self.dim, 1))
-        round_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, self.R)
+        cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
         cr.set_source_rgba(*self.green, 0.6)
         cr.set_line_width(1)
         cr.stroke()
@@ -1105,22 +1151,23 @@ class Terminal(Theme):
                     cr.rectangle(tx, sy - 1, tw, th + 2)
                     cr.set_source_rgba(*self.green, 1)
                     cr.fill()
-                color = (0.0, 0.05, 0.02, 1) if inverse else ((*self.green, 1) if name else (*self.dim, 1))
+                color = (0.03, 0.04, 0.01, 1) if inverse else ((*self.green, 1) if name else (*self.dim, 1))
                 show(cr, lay, tx, sy, color)
 
     def box_css(self):
         return """
-window.flippy-box .flippy-card { background: #030805; border: 1px solid rgba(64,255,115,0.6); border-radius: 0;
-  padding: 10px 14px; color: #40ff73; font-family: "Fira Mono", monospace; }
-window.flippy-box entry { background: #000; color: #40ff73; caret-color: #40ff73; border-radius: 0;
-  font-family: "Fira Mono", monospace; font-size: 16px; border: 1px solid rgba(64,255,115,0.35); }
-window.flippy-box .flippy-hint { color: rgba(64,255,115,0.55); font-size: 12px; font-family: "Fira Mono", monospace; }"""
+window.flippy-box .flippy-card { background: #080802; border: 1px solid rgba(140,237,107,0.6); border-radius: 0;
+  padding: 10px 14px; color: #8ced6b; font-family: "Fira Mono", monospace; }
+window.flippy-box entry { background: #000; color: #8ced6b; caret-color: #8ced6b; border-radius: 0;
+  font-family: "Fira Mono", monospace; font-size: 16px; border: 1px solid rgba(140,237,107,0.35); }
+window.flippy-box .flippy-hint { color: rgba(140,237,107,0.55); font-size: 12px; font-family: "Fira Mono", monospace; }"""
 
 
 # ---- Media Player (2000s media player mini mode: dark teal glass, glossy orb) -----
 
 class MediaPlayer(Theme):
     key, name = "mediaplayer", "Media Player"
+    player = True
     pointer = "arrow"
     accent = (0.35, 0.72, 1.0)
     tap = (0.35, 0.72, 1.0)
@@ -1159,7 +1206,7 @@ class MediaPlayer(Theme):
         G = self._geom(x, y, w, h)
         cy, ox, bx = G["cy"], G["ox"], G["bx"]
         window = {"min": (bx, y + 5, 21, 15), "max": (bx + 22, y + 5, 21, 15), "close": (bx + 44, y + 5, 24, 15)}
-        if card.phase == "thinking" or card.task:  # only the window buttons: nothing to play
+        if no_player(card, opts):  # only the window buttons: nothing to play, or the slim row plays it
             return window
         hits = {
             **window,
@@ -1174,12 +1221,12 @@ class MediaPlayer(Theme):
 
     def size(self, card, opts):
         _, bh = lsize(self._body(_measure_ctx, card, opts))
-        if card.phase == "thinking" or card.task:  # the title bar and the text: no controls
+        if no_player(card, opts):  # the title bar and the text: no controls
             return self._w(card, opts), self.TITLE_H + bh + 30
         return self._w(card, opts), self.TITLE_H + bh + 26 + self.CTRL_H + 8
 
     def controls_height(self, card, opts):
-        return 0 if card.phase == "thinking" or card.task else self.CTRL_H + 12
+        return 0 if no_player(card, opts) else self.CTRL_H + 12
 
     @staticmethod
     def _gloss_button(cr, x, y, w, h, r, base=(0.16, 0.22, 0.25), hi=0.35, pressed=False):
@@ -1249,7 +1296,7 @@ class MediaPlayer(Theme):
         liquid = opts.get("backdrop")
         if liquid:
             self._liquid(cr, x, y, w, h, a, gloss=opts.get("player_shine", "wmp") == "wmp",
-                         controls=card.phase != "thinking" and not card.task)
+                         controls=not no_player(card, opts))
         else:
             self._classic(cr, x, y, w, h, a)
         self._chrome(cr, x, y, w, h, card, t, opts, opts.get("pressed"), liquid)
@@ -1370,7 +1417,7 @@ class MediaPlayer(Theme):
         for dx, dy in ((1, 1), (0, 1), (1, 0), (-1, 0), (0, -1)):
             show(cr, body, px + 12 + dx, py + 8 + dy, (0, 0, 0, 0.55))
         show(cr, body, px + 12, py + 8, (1.0, 0.62, 0.58, 1) if card.error else (0.97, 0.99, 1.0, 1))
-        if card.phase == "thinking" or card.task:  # no seek line or controls: nothing to play
+        if no_player(card, opts):  # no seek line or controls: nothing to play (or the slim row plays it)
             return
 
         # seek line with a tick per walkthrough step and a glowing nub
@@ -1491,6 +1538,7 @@ class Glass(Theme):
     """A rounded glass card: bold title, the answer, a thin progress bar, bare white transport glyphs,
     and round glass buttons for speed and close. On macOS it floats on real Liquid Glass."""
     key, name = "glass", "Glass"
+    player = True
     pointer = "glass"
     accent = (0.92, 0.94, 1.0)
     tap = (1.0, 1.0, 1.0)
@@ -1522,13 +1570,13 @@ class Glass(Theme):
         head, body = self._layouts(_measure_ctx, card, opts)
         if card.phase == "thinking":  # just the glass and the text: no title or controls yet
             return self._w(card, opts), self.PAD + lsize(body)[1] + self.PAD
-        if card.task:  # the step or nothing, and the text: no player controls
+        if no_player(card, opts):  # the step or nothing, and the text: no player controls
             return self._w(card, opts), self.PAD + (lsize(head)[1] + 3 if head else 0) + lsize(body)[1] + self.PAD
         h = self.PAD + lsize(head)[1] + 3 + lsize(body)[1] + 14 + self.BAR_H + 8 + self.CTRL_H + 12
         return self._w(card, opts), h
 
     def controls_height(self, card, opts):
-        return 0 if card.phase == "thinking" or card.task else 12 + self.CTRL_H + 8 + self.BAR_H + 4
+        return 0 if no_player(card, opts) else 12 + self.CTRL_H + 8 + self.BAR_H + 4
 
     def pin_spot(self, card, x, y, w, h, opts):
         return x + w - self.PAD - 6, y + self.PAD + 10
@@ -1536,22 +1584,19 @@ class Glass(Theme):
     def _geom(self, x, y, w, h):
         cy = y + h - 12 - self.CTRL_H / 2
         by = cy - self.CTRL_H / 2 - 8 - self.BAR_H / 2
-        narrow = w < 260  # (#37) the transport alone: no room for the speed and close buttons beside it
         return {"cy": cy, "ox": x + w / 2, "by": by, "bx0": x + self.PAD + 46, "bx1": x + w - self.PAD - 46,
-                "speed": None if narrow else (x + self.PAD + self.BTN / 2, cy),
-                "close": None if narrow else (x + w - self.PAD - self.BTN / 2, cy)}
+                "speed": (x + self.PAD + self.BTN / 2, cy), "close": (x + w - self.PAD - self.BTN / 2, cy)}
 
     def hit_regions(self, card, x, y, w, h, opts=None):
-        if card.phase == "thinking" or card.task:
+        if no_player(card, opts):
             return {}
         G = self._geom(x, y, w, h)
         cy, ox, b = G["cy"], G["ox"], self.BTN
         hits = {"prev": (ox - 78, cy - 20, 40, 40), "toggle": (ox - 22, cy - 22, 44, 44), "next": (ox + 38, cy - 20, 40, 40),
                 "seek": (G["bx0"] - 4, G["by"] - 8, G["bx1"] - G["bx0"] + 8, 16)}
         for name in ("speed", "close"):
-            if G[name]:
-                bx, by = G[name]
-                hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
+            bx, by = G[name]
+            hits["speed_cycle" if name == "speed" else name] = (bx - b / 2, by - b / 2, b, b)
         return hits
 
     @staticmethod
@@ -1604,7 +1649,7 @@ class Glass(Theme):
             show(cr, head, x + P, ty, (1.0, 0.6, 0.56, 1) if card.error else (1, 1, 1, 0.96))
             ty += lsize(head)[1] + 3
         show(cr, body, x + P, ty, (1, 1, 1, 0.9 if card.task else 0.72))
-        if card.task:  # no player controls
+        if no_player(card, opts):  # no player controls (or the slim row)
             return
 
         G = self._geom(x, y, w, h)
@@ -1633,16 +1678,14 @@ class Glass(Theme):
             glyph(cr, name, gx, cy, 8, (1, 1, 1, 1.0 if pressed == name else 0.85))
         glyph(cr, "pause" if playing(card) else "play", ox, cy, 12, (1, 1, 1, 1.0 if pressed != "toggle" else 0.7))
         # round glass buttons: speed (left), close (right)
-        if G["speed"]:
-            sx, sy = G["speed"]
-            self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
-            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-            sw, sh = lsize(sl)
-            show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
-        if G["close"]:
-            cx_, cy_ = G["close"]
-            self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
-            glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
+        sx, sy = G["speed"]
+        self._glass_button(cr, sx, sy, self.BTN, pressed == "speed_cycle")
+        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+        sw, sh = lsize(sl)
+        show(cr, sl, sx - sw / 2, sy - sh / 2, (1, 1, 1, 0.92))
+        cx_, cy_ = G["close"]
+        self._glass_button(cr, cx_, cy_, self.BTN, pressed == "close")
+        glyph(cr, "close", cx_, cy_, 5, (1, 1, 1, 0.9))
 
     def box_css(self):
         return """
@@ -1696,18 +1739,12 @@ class Mono(Theme):
         r2 = y + h - P / 2 - self.ROW / 2 - 2   # buttons and speed
         r1 = r2 - self.ROW                      # seek
         close_x = x + w - P - B
-        G = {"r1": r1, "r2": r2, "count": (x + P, r1),
-             "seek": (x + P + 52, r1, w - 2 * P - 52),
-             "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
-             "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
-             "speed": (close_x - 14 - 110, r2, 110),
-             "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
-        gap_x = x + P + 3 * B + 12 + 6  # after next
-        if G["speed_cycle"][0] < gap_x:  # narrow (#37): no speed slider; the button between next and close, if it fits
-            G["speed"], cw = None, 34
-            G["speed_cycle"] = (gap_x + (close_x - 6 - gap_x - cw) / 2, r2 - B / 2, cw, B) \
-                if close_x - 6 - gap_x >= cw else None
-        return G
+        return {"r1": r1, "r2": r2, "count": (x + P, r1),
+                "seek": (x + P + 52, r1, w - 2 * P - 52),
+                "prev": (x + P, r2 - B / 2), "toggle": (x + P + B + 6, r2 - B / 2),
+                "next": (x + P + 2 * (B + 6), r2 - B / 2), "close": (close_x, r2 - B / 2),
+                "speed": (close_x - 14 - 110, r2, 110),
+                "speed_cycle": (close_x - 14 - 110 - 8 - 46, r2 - B / 2, 46, B)}  # the "1.25×" button
 
     def hit_regions(self, card, x, y, w, h, opts=None):
         if not lean_controls(card, opts or {}):
@@ -1716,11 +1753,9 @@ class Mono(Theme):
         hits = {name: (*G[name], B, B) for name in ("prev", "toggle", "next", "close")}
         sx, sy, sw = G["seek"]
         hits["seek"] = (sx, sy - 9, sw, 18)
-        if G["speed"]:
-            vx, vy, vw = G["speed"]
-            hits["speed"] = (vx, vy - 9, vw, 18)
-        if G["speed_cycle"]:
-            hits["speed_cycle"] = G["speed_cycle"]
+        vx, vy, vw = G["speed"]
+        hits["speed"] = (vx, vy - 9, vw, 18)
+        hits["speed_cycle"] = G["speed_cycle"]
         return hits
 
     def _slider(self, cr, x, cy, w, frac, pressed):
@@ -1787,14 +1822,12 @@ class Mono(Theme):
         for name in ("prev", "toggle", "next", "close"):
             g = name if name != "toggle" else ("pause" if playing(card) else "play")
             self._button(cr, *G[name], g, pressed == name)
-        if G["speed_cycle"]:
-            bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
-            self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
-            sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
-            show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
-        if G["speed"]:
-            vx, vy, vw = G["speed"]
-            self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
+        vx, vy, vw = G["speed"]
+        bx, by, bw, bh = G["speed_cycle"]  # click steps through the speeds
+        self._frame(cr, bx, by, bw, bh, pressed == "speed_cycle")
+        sl = layout(cr, f"{card.speed:g}×", self.font, 11, bold=True)
+        show(cr, sl, bx + (bw - lsize(sl)[0]) / 2, by + (bh - lsize(sl)[1]) / 2, (*self.fg, 1))
+        self._slider(cr, vx, vy, vw, speed_to_frac(card.speed), pressed == "speed")
 
     def box_css(self):
         return """

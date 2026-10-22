@@ -326,7 +326,7 @@ class Overlay(OverlayBase):
         return self._mouse()
 
     def card_width(self):
-        return box_width(main_screen())  # the same width as the question box
+        return round(box_width(main_screen()) * CARD_SCALE)
 
     def _over_control(self):
         x, y = self._mouse()
@@ -356,10 +356,10 @@ class Overlay(OverlayBase):
 
 def box_style(theme):
     """The question box's look per theme (the macOS counterpart of Theme.box_css). Small type for a small box, and
-    no square corners: the sharp themes (Mono, Terminal) get a softer radius here (#37)."""
+    no square corners except Terminal's: Mono gets a softer radius here (#37)."""
     st = {"bg": _rgba(24 / 255, 24 / 255, 28 / 255, 0.94), "border": _rgba(90 / 255, 160 / 255, 1, 0.55),
           "border_w": 1, "radius": 14, "fg": _hex("f2f2f2"), "font": (None, 14), "field_bg": None,
-          "field_border": None, "field_radius": 0, "hint": _rgba(1, 1, 1, 0.5), "hint_font": (None, 11)}
+          "field_border": None, "field_radius": 0, "hint": _rgba(1, 1, 1, 0.5), "hint_font": (None, 10)}
     if theme.key == "mono":
         st.update(bg=_rgba(0, 0, 0, 0.96), border=_rgba(*theme.outline), radius=10, fg=_rgba(*theme.fg),
                   field_bg=_rgba(0, 0, 0, 1), field_border=_rgba(*theme.outline, 0.7), field_radius=6,
@@ -368,10 +368,10 @@ def box_style(theme):
         st.update(bg=_rgba(*theme.bg, 0.96), border=_rgba(*theme.accent, 0.7), radius=theme.radius,
                   fg=_rgba(*theme.fg), hint=_rgba(*theme.fg, 0.5))
     elif theme.key == "terminal":
-        green = (64 / 255, 1, 115 / 255)
-        st.update(bg=_hex("030805"), border=_rgba(*green, 0.6), radius=10, fg=_rgba(*green), font=("Menlo", 13),
-                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), field_radius=6, hint=_rgba(*green, 0.55),
-                  hint_font=("Menlo", 10))
+        green = themes.TERMINAL_GREEN
+        st.update(bg=_hex("080802"), border=_rgba(*green, 0.6), radius=0, fg=_rgba(*green), font=("Menlo", 13),
+                  field_bg=_hex("000000"), field_border=_rgba(*green, 0.35), hint=_rgba(*green, 0.55),
+                  hint_font=("Menlo", 9))
     elif theme.key == "mediaplayer" and GLASS:  # Liquid Glass box; the field is a frostier, smokier pane
         st.update(glass=True, bg=None, border=_rgba(1, 1, 1, 0.35), radius=theme.LIQUID_R, fg=_hex("ffffff"),
                   field_bg=glass_tint("field"), field_border=_rgba(1, 1, 1, 0.3),
@@ -409,6 +409,7 @@ BOX_PT = (160, 280)    # ...kept within these points, and BOX_FALLBACK_PT when t
 BOX_FALLBACK_PT = 190  # about 1.5" on a 14" MacBook
 MOUSE_GAP = 14         # the box opens this far right of and below the mouse
 MAX_LINES = 8          # it grows down to this many lines, then scrolls
+CARD_SCALE = 1.3       # answer cards are this much wider than the question box: about 2 inches
 
 
 def box_width(screen):
@@ -459,7 +460,9 @@ class BoxDelegate(NSObject, protocols=[objc.protocolNamed("NSTextFieldDelegate")
 
 class InputBox:
     """The question box: about 1.5 inches wide, at the mouse, growing down as the question wraps (#37)."""
-    PAD_X, PAD_Y = 10, 10
+    PAD_X, PAD_Y = 10, 7
+    FIELD_PAD = 4  # above and below the text, inside the field
+    GAP = 3        # between the field and the hint
 
     def __init__(self, on_submit, on_cancel):
         self.on_submit = on_submit
@@ -575,7 +578,7 @@ class InputBox:
             editor.setInsertionPointColor_(st["fg"])
             editor.setAllowsUndo_(True)  # ⌘Z / ⇧⌘Z
 
-    # the box's insides, across: PAD_X | field (inset | text | inset) | PAD_X; down: PAD_Y field 6 hint PAD_Y
+    # the box's insides, across: PAD_X | field (inset | text | inset) | PAD_X; down: PAD_Y field GAP hint PAD_Y
     def _text_w(self):
         return self.w - 2 * self.PAD_X - 2 * self.inset
 
@@ -583,18 +586,18 @@ class InputBox:
         return _text_height(hint, self.hint_font, self.w - 2 * self.PAD_X)
 
     def _field_h(self):
-        return min(self.lines, MAX_LINES) * self.line_h + 12
+        return min(self.lines, MAX_LINES) * self.line_h + 2 * self.FIELD_PAD
 
     def _height(self, hint):
-        return self.PAD_Y + self._field_h() + 6 + self._hint_h(hint) + self.PAD_Y
+        return self.PAD_Y + self._field_h() + self.GAP + self._hint_h(hint) + self.PAD_Y
 
     def _layout(self, h):
         w, field_h, hint_h = self.w, self._field_h(), self._hint_h(str(self.hint.stringValue()))
         for view in (self.root, self.card):
             view.setFrame_(NSMakeRect(0, 0, w, h))
         self.field_box.setFrame_(NSMakeRect(self.PAD_X, h - self.PAD_Y - field_h, w - 2 * self.PAD_X, field_h))
-        self.entry.setFrame_(NSMakeRect(self.inset, 6, self._text_w(), field_h - 12))
-        self.hint.setFrame_(NSMakeRect(self.PAD_X, self.PAD_Y - 2, w - 2 * self.PAD_X, hint_h))
+        self.entry.setFrame_(NSMakeRect(self.inset, self.FIELD_PAD, self._text_w(), field_h - 2 * self.FIELD_PAD))
+        self.hint.setFrame_(NSMakeRect(self.PAD_X, self.PAD_Y, w - 2 * self.PAD_X, hint_h))
 
     def fit(self):
         """Grow or shrink to the question's lines, keeping the top edge where it is (and the box on screen)."""

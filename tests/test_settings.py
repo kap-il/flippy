@@ -24,8 +24,24 @@ class TestMigrate(unittest.TestCase):
         look = settings._migrate({"look": {"glass_shine": "none"}})["look"]
         self.assertEqual(look, {"player_shine": "none"})
 
-    def test_v2_files_are_left_alone(self):
+    def test_v2_files_keep_their_theme(self):
         self.assertEqual(settings._migrate({"version": 2, "look": {"theme": "glass"}})["look"]["theme"], "glass")
+
+    def test_v2_old_default_sizes_take_the_smaller_ones(self):
+        look = settings._migrate({"version": 2, "look": {"text_size": 15, "pointer_size": 1.0}})["look"]
+        self.assertEqual((look["text_size"], look["pointer_size"]), (13, 0.6))
+
+    def test_v2_sizes_someone_picked_are_kept(self):
+        look = settings._migrate({"version": 2, "look": {"text_size": 18, "pointer_size": 1.4}})["look"]
+        self.assertEqual((look["text_size"], look["pointer_size"]), (18, 1.4))
+
+    def test_v3_files_are_left_alone(self):
+        look = settings._migrate({"version": 3, "look": {"theme": "glass", "text_size": 15, "pointer_size": 1.0}})["look"]
+        self.assertEqual(look, {"theme": "glass", "text_size": 15, "pointer_size": 1.0})
+
+    def test_the_new_defaults_are_valid_settings(self):
+        for key in ("text_size", "pointer_size"):
+            self.assertTrue(settings._valid("look", key, settings.DEFAULTS["look"][key]), key)
 
 
 class TestSettings(unittest.TestCase):
@@ -183,7 +199,7 @@ class TestSettings(unittest.TestCase):
             settings.load()
         self.assertNotIn("private-invalid-value", output.getvalue())
         self.assertEqual(settings.get("look", "theme"), "mono")
-        self.assertEqual(settings.get("look", "text_size"), 15)
+        self.assertEqual(settings.get("look", "text_size"), settings.DEFAULTS["look"]["text_size"])
         self.assertEqual(settings.get("look", "card_opacity"), .8)
         self.assertEqual(settings.get("timing", "speed"), 1.)
 

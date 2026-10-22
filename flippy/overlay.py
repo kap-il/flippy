@@ -13,6 +13,7 @@ import cairo
 
 from . import placement, settings, themes
 
+MOUSE_GAP = 14              # a card by the mouse sits this far from it, like the question box (#37)
 DOCK_TOP = 40               # a docked answer stays below the menu bar...
 PLAN_H = 180                # ...and its spot is picked for at least this height: answers grow as they play
 
@@ -25,6 +26,8 @@ class OverlayBase:
     def __init__(self):
         self.card = None          # themes.Card being shown, or None
         self.card_mode = "top"    # "top" | "bottom" (centered) | "follow" (next to the pointer) | "dock" (placement)
+                                  # | "mouse" (next to the mouse: thinking, and answers that don't point, #37)
+        self.anchor = None        # where a "mouse" card is held once it's past thinking
         self.card_t0 = 0.0
         self.meta = ""            # shown by themes that have room for it (e.g. "OPUS · LOW")
         self.target = None        # (x, y, label) in logical px: where the pointer is heading
@@ -77,7 +80,7 @@ class OverlayBase:
         elif self.card.follow:
             self.card_mode = "follow"
         else:
-            self.card_mode = "bottom" if at_bottom else "top"
+            self.card_mode = "bottom" if at_bottom else "mouse" if self.mouse() is not None else "top"
         self.set_opacity(1.0)
         self._ensure_tick()
 
@@ -99,6 +102,7 @@ class OverlayBase:
 
     def clear(self, keep_marks=False):
         self.card = None
+        self.anchor = None
         self.pinned = self.learning = False
         self.keep = self.spot = None
         self.avoid = self.window = self.detail = None
@@ -148,10 +152,22 @@ class OverlayBase:
             cy = min(max(cy, 8), H - ch - 8)
         elif self.card_mode == "dock":
             return self._dock_rect(W, H, cw, ch)
+        elif self.card_mode == "mouse" and (self.anchor or self.mouse()):
+            return (*self._by_mouse(W, H, cw, ch), cw, ch)
         else:
             cx = (W - cw) / 2
             cy = H - ch - self.card_margin_bottom if self.card_mode == "bottom" else self.card_margin_top
         return cx, cy, cw, ch
+
+    def _by_mouse(self, W, H, cw, ch):
+        """Right of and below the mouse, where the question box was; left of it or above it near the edges. While
+        thinking it moves with the mouse; after that it stays, so its controls don't move away as you reach them."""
+        if self.card.phase == "thinking" or self.anchor is None:
+            self.anchor = self.mouse() or self.anchor
+        mx, my = self.anchor
+        cx = mx + MOUSE_GAP if mx + MOUSE_GAP + cw <= W - 8 else mx - MOUSE_GAP - cw
+        cy = my + MOUSE_GAP + 8 if my + MOUSE_GAP + 8 + ch <= H - 8 else my - MOUSE_GAP - ch  # below the arrow's tip
+        return min(max(cx, 8), W - cw - 8), min(max(cy, 8), H - ch - 8)
 
     def _dock_rect(self, W, H, cw, ch):
         """Where the docked answer is: its spot is picked once, then held by the edges nearest the screen's, so the
@@ -226,7 +242,7 @@ class OverlayBase:
         r, g, b = self.theme.pen
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
-        for width, alpha in ((12, 0.25), (5, 1.0)):  # soft glow, then the solid line
+        for width, alpha in ((8, 0.25), (3, 1.0)):  # soft glow, then the solid line (thinner since #37)
             cr.set_line_width(width)
             cr.set_source_rgba(r, g, b, alpha)
             for stroke in self.strokes:
@@ -257,6 +273,8 @@ class OverlayBase:
             (x, y, cw, ch), opts = lay
             theme.draw(cr, x, y, cw, ch, self.card, now - self.card_t0, opts)
             hits = theme.hit_regions(self.card, x, y, cw, ch, opts)
+            if opts.get("strip"):
+                hits.update(theme.draw_strip(cr, self.card, x, y, cw, ch, opts))
             if themes.pin_shown(self.card):
                 theme.draw_pin(cr, self.card, x, y, cw, ch, opts)
                 hits["pin"] = theme.pin_rect(self.card, x, y, cw, ch, opts)
@@ -293,6 +311,7 @@ class OverlayBase:
                 "backdrop": self.has_backdrop and bool(self.theme.backdrop),
                 "player_shine": settings.get("look", "player_shine"), "thought_open": self.thought_open,
                 "card_w": self.card_width()}
+        opts["strip"] = self.theme.strip_on(self.card, opts)  # a narrow card's slim row of controls (#37)
         return self._card_rect(w, h, opts), opts
 
     def card_width(self):

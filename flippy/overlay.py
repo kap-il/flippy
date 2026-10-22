@@ -287,8 +287,17 @@ class OverlayBase:
                 "controls": settings.get("look", "controls"),
                 "pressed": name if (time.monotonic() - at < 0.18 or self.slider) else None,
                 "backdrop": self.has_backdrop and bool(self.theme.backdrop),
-                "player_shine": settings.get("look", "player_shine"), "thought_open": self.thought_open}
+                "player_shine": settings.get("look", "player_shine"), "thought_open": self.thought_open,
+                "card_w": self.card_width()}
         return self._card_rect(w, h, opts), opts
+
+    def card_width(self):
+        """The card's width in px, for every theme (macOS: the question box's), or None for each theme's own."""
+        return None
+
+    def mouse(self):
+        """Where the mouse is in overlay coordinates, or None where the platform can't say."""
+        return None
 
     # --- platform hooks ---
     def queue_draw(self):

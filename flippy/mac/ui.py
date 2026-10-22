@@ -322,6 +322,12 @@ class Overlay(OverlayBase):
         p, f = NSEvent.mouseLocation(), self.panel.frame()
         return p.x - f.origin.x, f.origin.y + f.size.height - p.y
 
+    def mouse(self):
+        return self._mouse()
+
+    def card_width(self):
+        return box_width(main_screen())  # the same width as the question box
+
     def _over_control(self):
         x, y = self._mouse()
         return any(rx <= x <= rx + rw and ry <= y <= ry + rh for rx, ry, rw, rh in self.hits.values())

@@ -70,6 +70,11 @@ def lean_controls(card, opts):
             and card.phase != "thinking" and not card.error)
 
 
+def compact(opts):
+    """The card is the question box's width (macOS, #37): every theme fits its text and controls in it."""
+    return bool(opts and opts.get("card_w"))
+
+
 def pin_shown(card):
     """Answers get a pushpin; "thinking…", errors and notices don't."""
     return card.controls and card.phase != "thinking" and not card.error
@@ -589,10 +594,15 @@ class Theme:
     tap = (1.0, 0.25, 0.2)
     pen = (1.0, 0.25, 0.2)
     placeholder = "ask about your screen…"
-    widths = (360, 520)  # card width: riding next to the pointer, elsewhere
+    widths = (360, 520)  # card width: riding next to the pointer, elsewhere (where the platform doesn't set card_w)
+    pad_w = 0         # how much wider the card is than _w (themes that lay text out at _w and pad it)
     backdrop = None   # {"radius": r}: wants a real blurred-glass backdrop behind the card where the platform has one
 
-    def _w(self, card):
+    def _w(self, card, opts=None):
+        """The width the theme lays the card out at: the platform's card_w (macOS: the question box's, about 1.5
+        inches, #37) less the theme's padding, else its own widths."""
+        if opts and opts.get("card_w"):
+            return opts["card_w"] - self.pad_w
         return self.widths[0] if card.follow else self.widths[1]
 
     # A desktop task's card (Card.task) has no player controls, and its thinking section sits at the bottom of the
@@ -605,7 +615,7 @@ class Theme:
     def card_size(self, card, opts):
         w, h = self.size(card, opts)
         if card.task and card.thought:  # a theme that fits its card to the text ("Done.") still leaves room to read
-            w = max(w, self._w(card))
+            w = max(w, self._w(card, opts))
         if card.actions:
             w = max(w, self.actions_width(card, opts) + 2 * self.thought_inset)
         return w, h + self.thought_space(card, w, opts) + self.action_space(card, opts)
@@ -718,12 +728,16 @@ class Midnight(Theme):
     err = (1.0, 0.54, 0.5)
     font = "Noto Sans"
     radius = 14
+    pad_w = 32  # 16 each side of the text (size)
 
     def _layouts(self, cr, card, opts):
-        body = layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card))
+        room = PIN_ROOM if compact(opts) and pin_shown(card) else 0  # narrow: the pushpin's room comes off the text
+        body = layout(cr, card.text or " ", self.font, opts["text_size"],
+                      width=self._w(card, opts) - (0 if card.header else room))
         head = None
         if card.header:  # one line, at most as wide as the text can be: a long step ends in "…"
-            head = layout(cr, card.header, self.font, opts["text_size"] - 2, width=self._w(card), bold=True)
+            head = layout(cr, card.header, self.font, opts["text_size"] - 2, width=self._w(card, opts) - room,
+                          bold=True)
             ellipsize_end(head)
         return body, head
 
@@ -734,11 +748,13 @@ class Midnight(Theme):
         body, head = self._layouts(_measure_ctx, card, opts)
         bw, bh = lsize(body)
         hh = lsize(head)[1] + 3 if head else 0
-        w, h = max(bw, lsize(head)[0] if head else 0) + 32, bh + hh + 24
+        w, h = max(bw, lsize(head)[0] if head else 0) + self.pad_w, bh + hh + 24
         if pin_shown(card):
             w += PIN_ROOM
         if lean_controls(card, opts):
             w, h = max(w, self.CTRL_MIN_W), h + self.CTRL_H
+        if compact(opts):
+            w = opts["card_w"]
         return w, h
 
     @property
@@ -973,14 +989,16 @@ class Terminal(Theme):
     font = "Fira Mono"
     placeholder = "$ ask "
     widths = (380, 540)
+    pad_w = 28  # 14 each side of the text (size)
+    R = 10      # softened corners, like the question box's (#37)
 
     def _layouts(self, cr, card, opts):
         px = opts["text_size"] - 1
         cursor = "█" if (card.typing or card.phase == "thinking") else ""
-        body = layout(cr, (card.text or "") + cursor, self.font, px, width=self._w(card))
+        body = layout(cr, (card.text or "") + cursor, self.font, px, width=self._w(card, opts))
         head = None
         if card.header:  # one line, at most as wide as the text can be: a long step ends in "…"
-            head = layout(cr, f"> {card.header}", self.font, px, width=self._w(card), bold=True)
+            head = layout(cr, f"> {card.header}", self.font, px, width=self._w(card, opts), bold=True)
             ellipsize_end(head)
         bar = layout(cr, PROMPT, self.font, px - 3)
         return body, head, bar
@@ -1011,11 +1029,13 @@ class Terminal(Theme):
         body, head, bar = self._layouts(_measure_ctx, card, opts)
         bw, bh = lsize(body)
         hw, hh = (lsize(head)[0], lsize(head)[1] + 4) if head else (0, 0)
-        w, h = max(bw, hw, 200) + 28, bh + hh + lsize(bar)[1] + 30
+        w, h = max(bw, hw, min(200, self._w(card, opts))) + self.pad_w, bh + hh + lsize(bar)[1] + 30
         if lean_controls(card, opts):
             toks = self._status_layout(_measure_ctx, card, opts, 0, 0)
             w = max(w, toks[-1][2] + toks[-1][3] + 28)
             h += toks[0][4] + 12
+        if compact(opts):
+            w = opts["card_w"]
         return w, h
 
     pin_rgba = (0.25, 1.0, 0.45, 1)
@@ -1062,7 +1082,7 @@ class Terminal(Theme):
             ty += lsize(head)[1] + 4
         blink = (card.typing or card.phase == "thinking") and int(t * 2.5) % 2
         if blink:  # hide the block cursor every other beat
-            body = layout(cr, card.text or " ", self.font, opts["text_size"] - 1, width=self._w(card))
+            body = layout(cr, card.text or " ", self.font, opts["text_size"] - 1, width=self._w(card, opts))
         show(cr, body, x + 14, ty, (1.0, 0.45, 0.4, 1) if card.error else (*self.green, 1))
         if lean_controls(card, opts):
             sy = self._status_y(card, opts, y, h)
@@ -1112,7 +1132,7 @@ class MediaPlayer(Theme):
         return x + w - 9 - 3 * 22 - 13, y + 12.5
 
     def _body(self, cr, card, opts):
-        return layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card) - 44)
+        return layout(cr, card.text or " ", self.font, opts["text_size"], width=self._w(card, opts) - 44)
 
     def _geom(self, x, y, w, h):
         cy = y + h - self.CTRL_H / 2 - 2
@@ -1146,8 +1166,8 @@ class MediaPlayer(Theme):
     def size(self, card, opts):
         _, bh = lsize(self._body(_measure_ctx, card, opts))
         if card.phase == "thinking" or card.task:  # the title bar and the text: no controls
-            return self._w(card), self.TITLE_H + bh + 30
-        return self._w(card), self.TITLE_H + bh + 26 + self.CTRL_H + 8
+            return self._w(card, opts), self.TITLE_H + bh + 30
+        return self._w(card, opts), self.TITLE_H + bh + 26 + self.CTRL_H + 8
 
     def controls_height(self, card, opts):
         return 0 if card.phase == "thinking" or card.task else self.CTRL_H + 12
@@ -1480,7 +1500,7 @@ class Glass(Theme):
         return card.header or ("Something went wrong" if card.error else "Flippy")
 
     def _layouts(self, cr, card, opts):
-        w = self._w(card) - 2 * self.PAD
+        w = self._w(card, opts) - 2 * self.PAD
         title = self._title(card)
         head = layout(cr, title, self.font, opts["text_size"], width=w - (PIN_ROOM if pin_shown(card) else 0),
                       bold=True) if title else None
@@ -1492,11 +1512,11 @@ class Glass(Theme):
     def size(self, card, opts):
         head, body = self._layouts(_measure_ctx, card, opts)
         if card.phase == "thinking":  # just the glass and the text: no title or controls yet
-            return self._w(card), self.PAD + lsize(body)[1] + self.PAD
+            return self._w(card, opts), self.PAD + lsize(body)[1] + self.PAD
         if card.task:  # the step or nothing, and the text: no player controls
-            return self._w(card), self.PAD + (lsize(head)[1] + 3 if head else 0) + lsize(body)[1] + self.PAD
+            return self._w(card, opts), self.PAD + (lsize(head)[1] + 3 if head else 0) + lsize(body)[1] + self.PAD
         h = self.PAD + lsize(head)[1] + 3 + lsize(body)[1] + 14 + self.BAR_H + 8 + self.CTRL_H + 12
-        return self._w(card), h
+        return self._w(card, opts), h
 
     def controls_height(self, card, opts):
         return 0 if card.phase == "thinking" or card.task else 12 + self.CTRL_H + 8 + self.BAR_H + 4
@@ -1635,10 +1655,11 @@ class Mono(Theme):
     err = (1.0, 0.55, 0.5)
     font = "Noto Sans"
     P, BTN, ROW = 16, 26, 30
+    R = 10  # softened corners, like the question box's (#37)
     widths = (360, 480)
 
     def _layouts(self, cr, card, opts):
-        w = self._w(card) - 2 * self.P
+        w = self._w(card, opts) - 2 * self.P
         room = PIN_ROOM if pin_shown(card) else 0  # the top line runs beside the pin
         head = layout(cr, card.header, self.font, opts["text_size"] - 1, width=w - room, bold=True) if card.header else None
         body = layout(cr, card.text or " ", self.font, opts["text_size"], width=w if head else w - room)
@@ -1654,7 +1675,7 @@ class Mono(Theme):
         h = self.P + (lsize(head)[1] + 4 if head else 0) + lsize(body)[1] + self.P
         if lean_controls(card, opts):
             h += 2 * self.ROW + 6
-        return self._w(card), h
+        return self._w(card, opts), h
 
     def _geom(self, x, y, w, h):
         P, B = self.P, self.BTN

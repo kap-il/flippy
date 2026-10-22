@@ -1272,7 +1272,8 @@ class Platform(AppHost):
                 ax.drag(pid, wid, x, y, *frame.to_logical(args["to_x"], args["to_y"]), cancel)
         else:
             raise ActionError("Unsupported desktop action.")
-        time.sleep(0.25)  # let the app redraw before the next look
+
+    act_settle_s = 0.25  # after acting, before the next look: let the app redraw (DesktopTools.settle)
 
     BORROW_IDLE_S = 1.0     # the pointer is borrowed only after this long without the user's input...
     BORROW_WAIT_S = 45.0    # ...waiting at most this long for such a pause

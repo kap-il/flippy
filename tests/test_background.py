@@ -263,7 +263,7 @@ class StopAndWording(unittest.TestCase):
 
         class Client:
             def __init__(self, options):
-                seen["effort"] = options.effort
+                seen["effort"], seen["thinking"] = options.effort, options.thinking
 
             async def __aenter__(self):
                 raise RuntimeError("stop")
@@ -278,6 +278,7 @@ class StopAndWording(unittest.TestCase):
                     patch.object(brain, "ClaudeSDKClient", Client), self.assertRaises(RuntimeError):
                 asyncio.run(b.act("x", tools))
             self.assertEqual(seen["effort"], setting)
+            self.assertEqual(seen["thinking"], {"type": "disabled"} if setting == "low" else None)
 
 
 class StopFreesFlippy(unittest.TestCase):

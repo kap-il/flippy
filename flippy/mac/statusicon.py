@@ -31,18 +31,18 @@ def _sprite_surface(rows, solid=True):
     return surf
 
 
-def _glass_hand_surface():
+def _glass_hand_surface(shape):
     """The glass hand's pieces as one silhouette, tip at (pad, pad)."""
     pad = 30
     surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 120, 120)
     cr = cairo.Context(surf)
     cr.set_source_rgba(0, 0, 0, 1)
-    for px, py, w, h, r, rot in themes.GLASS_HAND:
+    for px, py, w, h, r, rot in shape:
         themes._piece_path(cr, px + pad, py + pad + 2, w, h, r, rot)
     cr.fill()
-    xs = [p[0] for p in themes.GLASS_HAND]
-    ws = [p[0] + p[2] for p in themes.GLASS_HAND]
-    hs = [p[1] + p[3] for p in themes.GLASS_HAND]
+    xs = [p[0] for p in shape]
+    ws = [p[0] + p[2] for p in shape]
+    hs = [p[1] + p[3] for p in shape]
     x0, x1, y1 = pad + min(xs) - 4, pad + max(ws) + 2, pad + max(hs) + 4
     out = cairo.ImageSurface(cairo.FORMAT_ARGB32, int(x1 - x0), int(y1 - pad))
     c2 = cairo.Context(out)
@@ -106,12 +106,13 @@ def _shape(style, theme):
         if got:
             return got
         style = theme.pointer
-    if style == "hand":
-        return _sprite_surface(themes.HAND, solid=False), themes.HAND_TIP_COL + 0.5, 0, True
+    if style in themes.PIXEL_HANDS:
+        rows, tip = themes.PIXEL_HANDS[style]
+        return _sprite_surface(rows, solid=False), tip + 0.5, 0, True
     if style == "arrow":
         return _sprite_surface(themes.ARROW), 0.5, 0, True
-    if style == "glasshand":
-        return _glass_hand_surface()
+    if style in themes.GLASS_HANDS:
+        return _glass_hand_surface(themes.GLASS_HANDS[style])
     return None  # round styles are drawn directly
 
 

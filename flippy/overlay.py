@@ -298,9 +298,11 @@ class OverlayBase:
 
     def pointer_hand(self, screen_h):
         """The Liquid Glass hand's pieces (themes.glass_hand) when it's showing on real glass, else None."""
-        if not (self.has_backdrop and self.target and self.pos and self.pointer_style() == "glasshand"):
+        style = self.pointer_style()
+        if not (self.has_backdrop and self.target and self.pos and style in themes.GLASS_HANDS):
             return None
-        return themes.glass_hand(*self.pos, time.monotonic() - self.t0, settings.get("look", "pointer_size"), screen_h)
+        return themes.glass_hand(*self.pos, time.monotonic() - self.t0, settings.get("look", "pointer_size"), screen_h,
+                                 themes.GLASS_HANDS[style])
 
     def card_layout(self, w, h):
         """((x, y, w, h), theme opts) of the card on a w x h screen, or None when there's no card."""

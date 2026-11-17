@@ -231,7 +231,8 @@ class Overlay(OverlayBase):
             self.hand = AppKit.NSGlassEffectContainerView.alloc().initWithFrame_(bounds)
             self.hand.setSpacing_(6)
             hand_view = FlippedView.alloc().initWithFrame_(bounds)
-            self.hand_pieces = [_glass_view(4, glass_color(LENS["frost"], LENS["smoke"])) for _ in themes.GLASS_HAND]
+            self.hand_pieces = [_glass_view(4, glass_color(LENS["frost"], LENS["smoke"]))
+                                for _ in range(max(map(len, themes.GLASS_HANDS.values())))]
             for piece in self.hand_pieces:
                 hand_view.addSubview_(piece)
             self.hand.setContentView_(hand_view)
@@ -284,6 +285,8 @@ class Overlay(OverlayBase):
                 view.setCornerRadius_(r)
                 view.setFrameCenterRotation_(rot)  # in a flipped parent this turns the same way as cairo
                 _show(view, True)
+            for view in self.hand_pieces[len(pieces):]:  # a hand with fewer pieces than the most
+                _show(view, False)
         _show(self.hand, bool(pieces))
         lens = self.pointer_lens()
         if lens:

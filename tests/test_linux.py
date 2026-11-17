@@ -71,7 +71,7 @@ class ClickChange(unittest.TestCase):
 class TrayIcon(unittest.TestCase):
     def test_pixmaps(self):
         from flippy.linux import tray
-        for style in ("hand", "ring", "glasshand"):
+        for style in ("hand", "ring", "glasshand", "middle", "glassmiddle"):
             maps = tray._pixmaps(style)
             self.assertEqual([(int(w), int(h), len(data)) for w, h, data in maps],
                              [(px, px, px * px * 4) for px in tray.ICON_PX])

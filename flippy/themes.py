@@ -322,7 +322,31 @@ def round_rect(cr, x, y, w, h, r):
 
 # ---------------------------------------------------------------- pointers
 
+# The pixel hand points with its index finger (on the thumb's side), the classic hand cursor.
 HAND = [
+    "  ##          ",
+    " #..#         ",
+    " #..#         ",
+    " #..#         ",
+    " #..#         ",
+    " #..#         ",
+    " #..#         ",
+    " #..#######   ",
+    " #..#..#..##  ",
+    " #..#..#..#.# ",
+    "##..........# ",
+    "#.#.........# ",
+    "#..#........# ",
+    " #..........# ",
+    "  #.........# ",
+    "  #........#  ",
+    "   #.......#  ",
+    "   #.......#  ",
+    "   #########  ",
+]
+HAND_TIP_COL = 3  # the column whose left edge is the middle of the fingertip
+# The easter egg: the hand Flippy used to point with, middle finger up. Hidden until found (settings.SECRET_POINTERS).
+MIDDLE_HAND = [
     "     ##       ",
     "    #..#      ",
     "    #..#      ",
@@ -343,7 +367,7 @@ HAND = [
     "   #.......#  ",
     "   #########  ",
 ]
-HAND_TIP_COL = 6
+MIDDLE_TIP_COL = 6
 ARROW = [
     "#          ",
     "##         ",
@@ -387,12 +411,13 @@ def pointer_extent(style, size):
     px = sprite_px(size)
     if style.startswith(pointers.PREFIX):
         return pointers.extent(style[len(pointers.PREFIX):], size, px)
-    if style == "hand":
-        return (len(HAND[0]) - HAND_TIP_COL) * px, HAND_TIP_COL * px, len(HAND) * px, len(HAND) * px
+    if style in PIXEL_HANDS:
+        rows, tip = PIXEL_HANDS[style]
+        return (len(rows[0]) - tip) * px, tip * px, len(rows) * px, len(rows) * px
     if style == "arrow":
         return len(ARROW[0]) * px, 0, len(ARROW) * px, 0
-    if style == "glasshand":
-        return 20 * size, 26 * size, 50 * size, 50 * size
+    if style in GLASS_HANDS:
+        return tuple(v * size for v in GLASS_EXTENT[style])
     r = 26 * size
     return r, r, r, r
 
@@ -446,21 +471,32 @@ def _draw_lens(cr, x, y, t, size, backdrop):
     cr.fill()
 
 
-# The Liquid Glass hand: rounded pieces that a glass container fuses into one shape. It points the way
-# the app icon's pixel hand always looked like it was pointing: middle finger up, the rest curled.
-# (x, y, w, h, corner radius, rotation in degrees), in px at size 1, with the fingertip at (0, 0), pointing up.
-# The first piece must be the pointing finger (the tip dot sits in it).
+# The Liquid Glass hand: rounded pieces that a glass container fuses into one shape, pointing like the pixel
+# hand: index finger up, the rest curled. (x, y, w, h, corner radius, rotation in degrees), in px at size 1, with
+# the fingertip at (0, 0), pointing up. The first piece must be the pointing finger (the tip dot sits in it).
 GLASS_HAND = [
+    (-5, 0, 10, 36, 5, 0),        # index finger, up and long
+    (-7, 25, 34, 24, 10, 0),      # the fist
+    (5, 19, 10, 13, 5, 0),        # curled middle
+    (14, 20, 9, 13, 4.5, 0),      # curled ring
+    (21, 23, 7, 11, 3.5, 0),      # curled pinky
+    (-17, 26, 18, 10, 5, 35),     # thumb: one piece, angled up and out, its inner end buried in the fist
+]
+# The easter egg in glass: middle finger up, index curled beside it.
+GLASS_MIDDLE = [
     (-5, 0, 10, 36, 5, 0),        # middle finger, up and long
     (-15, 25, 34, 24, 10, 0),     # the fist
     (-15, 19, 10, 13, 5, 0),      # curled index
     (5, 19, 9, 13, 4.5, 0),       # curled ring
     (13, 22, 7, 11, 3.5, 0),      # curled pinky
-    (-25, 26, 18, 10, 5, 35),     # thumb: one piece, angled up and out, its inner end buried in the fist
+    (-25, 26, 18, 10, 5, 35),     # thumb
 ]
+PIXEL_HANDS = {"hand": (HAND, HAND_TIP_COL), "middle": (MIDDLE_HAND, MIDDLE_TIP_COL)}
+GLASS_HANDS = {"glasshand": GLASS_HAND, "glassmiddle": GLASS_MIDDLE}
+GLASS_EXTENT = {"glasshand": (29, 19, 50, 50), "glassmiddle": (20, 26, 50, 50)}  # (right, left, below, above) at size 1
 
 
-def glass_hand(x, y, t, size, screen_h):
+def glass_hand(x, y, t, size, screen_h, shape=GLASS_HAND):
     """Where the glass hand's pieces go: [(x, y, w, h, radius, rotation)] in screen px, tip on (x, y).
     Drops in and bobs like the pixel hand, and flips to point down when there's no room below."""
     intro = min(t / 0.3, 1.0)
@@ -468,7 +504,7 @@ def glass_hand(x, y, t, size, screen_h):
     bob = 3 * math.sin(t * 4) if intro >= 1 else 0
     flip = y + 50 * size + 4 > screen_h
     out = []
-    for px, py, w, h, r, rot in GLASS_HAND:
+    for px, py, w, h, r, rot in shape:
         if flip:  # mirror top-bottom around the tip
             py, rot = -(py + h), -rot
         oy = (-2 - drop - bob) if flip else (2 + drop + bob)
@@ -495,8 +531,8 @@ def _union(cr, pieces, paint):
     paint(cr)
 
 
-def _draw_glass_hand(cr, x, y, t, size, screen_h, backdrop):
-    pieces = glass_hand(x, y, t, size, screen_h)
+def _draw_glass_hand(cr, x, y, t, size, screen_h, backdrop, shape=GLASS_HAND):
+    pieces = glass_hand(x, y, t, size, screen_h, shape)
     cr.save()  # shadow
     cr.translate(2, 3)
     _union(cr, pieces, lambda c: c.paint_with_alpha(0.22))
@@ -550,20 +586,21 @@ def draw_pointer(cr, theme, style, x, y, t, size, screen_h, backdrop=False):
     if style == "glass":
         _draw_lens(cr, x, y, t, size, backdrop)
         return
-    if style == "glasshand":
-        _draw_glass_hand(cr, x, y, t, size, screen_h, backdrop)
+    if style in GLASS_HANDS:
+        _draw_glass_hand(cr, x, y, t, size, screen_h, backdrop, GLASS_HANDS[style])
         return
-    if style in ("hand", "arrow"):
+    if style in PIXEL_HANDS or style == "arrow":
         cr.set_source_rgba(tr, tg, tb, 0.25 + 0.2 * pulse)  # tap ring at the exact spot
         cr.arc(x, y, (10 + 4 * pulse) * size, 0, 2 * math.pi)
         cr.fill()
-    if style == "hand":
-        h = len(HAND) * px
+    if style in PIXEL_HANDS:
+        rows, tip = PIXEL_HANDS[style]
+        h = len(rows) * px
         flip = y + h + 4 > screen_h  # no room below: point down at it instead
-        hx = x - HAND_TIP_COL * px
+        hx = x - tip * px
         hy = (y - h - 2 - drop - bob) if flip else (y + 2 + drop + bob)
-        _sprite(cr, HAND, hx + 2, hy + 3, px, None, None, flip, shadow=True)
-        _sprite(cr, HAND, hx, hy, px, theme.hand_fill, theme.hand_outline, flip)
+        _sprite(cr, rows, hx + 2, hy + 3, px, None, None, flip, shadow=True)
+        _sprite(cr, rows, hx, hy, px, theme.hand_fill, theme.hand_outline, flip)
     elif style == "arrow":
         ay = y + drop + bob
         _sprite(cr, ARROW, x + 2, ay + 3, px, None, None, shadow=True)

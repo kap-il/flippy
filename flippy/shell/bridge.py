@@ -289,6 +289,11 @@ class Bridge:
     def op_pointers(self):
         return appearance.pointers_gallery()
 
+    def op_pointer_secret(self):
+        """The easter egg was found: the rude hands join the gallery from now on."""
+        settings.set("look", "secret_hands", True)
+        return appearance.pointers_gallery()
+
     def op_studio_open(self, name=None, start=None):
         return appearance.studio_open(name, start)
 

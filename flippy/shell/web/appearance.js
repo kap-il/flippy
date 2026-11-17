@@ -75,13 +75,32 @@ function tintRow() {
 }
 
 // ---- pointer gallery
+// The easter egg: click a hand five times in quick succession and the rude hands (settings.SECRET_POINTERS) appear.
+let handClicks = [];
+async function handClicked(value) {
+  if (!["hand", "glasshand"].includes(value) || !gallery || gallery.pointers.some((p) => p.secret && p.value !== F.value("look.pointer"))) return;
+  const now = Date.now();
+  handClicks = [...handClicks.filter((t) => now - t < 2000), now];
+  if (handClicks.length < 5) return;
+  handClicks = [];
+  const found = await F.call("pointer_secret").catch(() => null);
+  if (!found) return;
+  gallery.pointers = found;
+  F.rerender();
+  F.toast("You found the secret hands. Behave.");
+}
+
 function pointerTiles(host) {
   const current = F.value("look.pointer");
   const grid = el("div", { class: "pointers", role: "radiogroup", "aria-label": "Pointer" });
   const list = gallery ? gallery.pointers : [];
   for (const p of list) {
     const tile = el("div", { class: "ptr", role: "radio", tabindex: "0", "aria-checked": String(p.value === current), title: p.name,
-      onclick: (e) => { if (!e.target.closest(".more") && p.value !== F.value("look.pointer")) F.undoable({ "look.pointer": p.value }, `Pointer set to ${p.name}`); },
+      onclick: (e) => {
+        if (e.target.closest(".more")) return;
+        handClicked(p.value);
+        if (p.value !== F.value("look.pointer")) F.undoable({ "look.pointer": p.value }, `Pointer set to ${p.name}`);
+      },
       onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } } },
       el("span", { class: "art" }, el("img", { src: p.image, alt: "" })), el("span", { class: "name" }, p.name));
     if (p.custom) {

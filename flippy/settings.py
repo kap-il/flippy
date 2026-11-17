@@ -31,7 +31,8 @@ DEFAULTS = {
     },
     "look": {
         "theme": "mono",        # see flippy/themes.py
-        "pointer": "theme",     # theme | hand | ring | arrow | dot | glass | glasshand
+        "pointer": "theme",     # theme | hand | ring | arrow | dot | glass | glasshand (or a SECRET_POINTERS one)
+        "secret_hands": False,  # found the easter egg (five quick clicks on a hand in Appearance): SECRET_POINTERS show
         "pointer_size": 0.6,    # multiplier (1.0 until config version 3, #37): the hand in 2px blocks, was 4px
         "text_size": 13,        # px, answer text (15 until config version 3, #37)
         "card_opacity": 0.94,
@@ -121,6 +122,8 @@ _OPTIONS = {
     ('window', 'mode'): [('system', 'System'), ('light', 'Light'), ('dark', 'Dark')],
     ('look', 'theme'): [('mono', 'Mono'), ('midnight', 'Midnight'), ('mediaplayer', 'Mediaplayer'), ('glass', 'Glass'), ('terminal', 'Terminal'), ('cosmic', 'Cosmic')],
 }
+# The easter egg pointers: valid settings, but not offered (or searchable) until found. flippy/themes.py draws them.
+SECRET_POINTERS = {"middle": "Rude pixel hand", "glassmiddle": "Rude glass hand"}
 _BOUNDS = {
     ('look', 'pointer_size'): (0.5, 2.0, 0.1, 1),
     ('look', 'text_size'): (11, 24, 1, 0),
@@ -246,6 +249,8 @@ def _valid(section, key, value):
     if (section, key) == ("look", "pointer") and value.startswith("custom:"):
         from . import pointers
         return pointers.exists(value[len("custom:"):])
+    if (section, key) == ("look", "pointer") and value in SECRET_POINTERS:
+        return True
     return not spec.choices or value in CHOICES[section, key]
 
 

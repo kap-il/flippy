@@ -134,6 +134,19 @@ class AppearanceTest(ShellTestCase):
             raise ValueError(r["error"])
         return r["result"]
 
+    def test_secret_hands_stay_hidden_until_found(self):
+        secret = set(settings.SECRET_POINTERS)
+        self.assertFalse(secret & {p["value"] for p in self.call("pointers")})
+        self.assertFalse(secret & {c[0] for c in settings.options("look", "pointer")})  # not searchable either
+        found = {p["value"] for p in self.call("pointer_secret") if p.get("secret")}
+        self.assertEqual(found, secret)
+        self.assertTrue(settings.get("look", "secret_hands"))
+        self.assertEqual(found, {p["value"] for p in self.call("pointers") if p.get("secret")})
+
+    def test_an_equipped_secret_hand_shows_without_the_egg(self):
+        settings.set("look", "pointer", "middle")  # e.g. from an imported look
+        self.assertEqual([p["value"] for p in self.call("pointers") if p.get("secret")], ["middle"])
+
     def _pixel_hand(self, name="Hand copy"):
         t = self.call("studio_template", kind="hand")
         return self.call("studio_save", mode="pixel", name=name, hotspot=t["hotspot"], cells=t["cells"])

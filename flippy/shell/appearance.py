@@ -101,6 +101,9 @@ def pointers_gallery():
     labels = dict(settings.options("look", "pointer"))
     out += [{"value": p, "name": labels.get(p, p.capitalize()), "custom": False, "image": pointer_tile(p)}
             for p in BUILTIN_POINTERS]
+    current = settings.get("look", "pointer")
+    out += [{"value": p, "name": name, "custom": False, "secret": True, "image": pointer_tile(p)}
+            for p, name in settings.SECRET_POINTERS.items() if settings.get("look", "secret_hands") or p == current]
     out += [{"value": pointers.PREFIX + n, "name": n, "custom": True, "image": pointer_tile(pointers.PREFIX + n)}
             for n in pointers.names()]
     return out

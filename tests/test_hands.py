@@ -3,7 +3,7 @@ import unittest
 
 import cairo
 
-from flippy import themes
+from flippy import settings, themes
 
 
 def _raised_column(rows):
@@ -45,6 +45,11 @@ class Hands(unittest.TestCase):
             right, left, _, _ = themes.GLASS_EXTENT[style]
             self.assertGreaterEqual(right, max(p[0] + p[2] for p in shape))
             self.assertGreaterEqual(left, -min(p[0] for p in shape) - 1)
+
+    def test_secret_hands_are_valid_settings(self):
+        for style in settings.SECRET_POINTERS:
+            self.assertIn(style, [*themes.PIXEL_HANDS, *themes.GLASS_HANDS])
+            self.assertEqual(settings.parse_value("look.pointer", style), style)
 
 
 if __name__ == "__main__":

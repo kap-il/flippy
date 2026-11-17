@@ -19,7 +19,7 @@ PAGES = [
     ("timing", "Timing", "timer", [(None, ["timing"])]),
     ("help", "Help mode", "lifebuoy", [(None, ["help"])]),
 ]
-HIDDEN = {("onboarding", "done")}  # state, not a preference
+HIDDEN = {("onboarding", "done"), ("look", "secret_hands")}  # state, not a preference
 ADVANCED = {("timing", "glide_seconds"), ("timing", "speed"), ("claude", "image"), ("help", "muted")}
 
 # (section, key): (label, help, platforms or None for all)

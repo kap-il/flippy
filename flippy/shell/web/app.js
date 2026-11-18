@@ -164,13 +164,17 @@ F.keycaps = (combo) => {
 // Keycaps from ready-made tokens (COSMIC's accelerators: ["Super", "Shift", "Space"]).
 F.tokens = (tokens) => el("span", { class: "keys", "aria-label": tokens.join(" ") }, tokens.map((t) => el("kbd", {}, t)));
 const KEYNAMES = { " ": "space", Enter: "return", Tab: "tab", Escape: "escape" };
+// Flippy lets go of its own hotkeys while recording (bridge op_shortcut_recording), so its current shortcut reaches
+// the page.
 function recordShortcut(f, row, button) {
   let caps = row.querySelector(".keys");
   caps.classList.add("recording");
   caps.replaceChildren(el("kbd", {}, "Type a shortcut"));
   button.textContent = "Cancel";
+  F.call("shortcut_recording", { on: true }).catch(() => {});
   const stop = () => {
     document.removeEventListener("keydown", onKey, true);
+    F.call("shortcut_recording", { on: false }).catch(() => {});
     button.textContent = "Record";
     button.onclick = () => recordShortcut(f, row, button);
   };

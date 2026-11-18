@@ -1,5 +1,6 @@
 """The app window's page model and bridge (flippy/shell): plain Python, no webview."""
 import os
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -303,3 +304,52 @@ class PageActions(ShellTestCase):
         for a in acts:
             self.assertTrue(hasattr(bridge.Bridge, "op_" + a["op"]), a)
         self.assertIn("/new", [a["keys"] for a in pages["shortcuts"]["actions"]])
+
+
+class ShortcutRecording(unittest.TestCase):
+    """Recording a shortcut lets go of Flippy's hotkeys meanwhile, so the current one reaches the page."""
+
+    def test_the_page_pauses_and_resumes_through_the_daemon(self):
+        sent = []
+        b = bridge.Bridge(command=sent.append)
+        self.addCleanup(b.close)
+        for on in (True, False):
+            self.assertTrue(b.handle({"id": 1, "op": "shortcut_recording", "args": {"on": on}})["ok"])
+        self.assertEqual(sent, ["keys-pause", "keys-resume"])
+
+    def test_the_daemon_hands_it_to_the_platform(self):
+        from types import SimpleNamespace
+        from flippy import daemon
+        h = daemon.Flippy.__new__(daemon.Flippy)
+        got = []
+        h.ui = SimpleNamespace(pause_keys=got.append)
+        self.assertEqual(h.command("keys-pause"), "ok")
+        self.assertEqual(h.command("keys-resume"), "ok")
+        self.assertEqual(got, [True, False])
+        h.ui = SimpleNamespace()  # COSMIC runs the shortcuts itself: nothing to pause
+        self.assertEqual(h.command("keys-pause"), "ok")
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS hotkeys")
+    def test_macos_lets_go_and_binds_again(self):
+        from flippy.mac import ui
+        p = ui.Platform.__new__(ui.Platform)
+        p.keys_paused = p.key_pauses = 0
+        bound, timers = [], []
+        p._bind_keys = lambda: bound.append(p.keys_paused)
+        with mock.patch.object(ui.hotkeys, "unregister") as unregister, \
+                mock.patch.object(ui.loop, "timeout_add", side_effect=lambda ms, fn: timers.append(fn)):
+            p.pause_keys(True)
+            self.assertEqual([c.args[0] for c in unregister.call_args_list], [1, 2, 3])
+            self.assertTrue(p.keys_paused)
+            p.pause_keys(False)
+            self.assertEqual((p.keys_paused, bound), (0, [0]))
+            p.pause_keys(False)  # not paused: nothing to bind again
+            self.assertEqual(bound, [0])
+            p.pause_keys(True)  # left running: the timer gives them back
+            timers[-1]()
+            self.assertEqual((p.keys_paused, bound), (0, [0, 0]))
+            p.pause_keys(True)
+            p.pause_keys(False)
+            p.pause_keys(True)
+            timers[-2]()  # an older recording's timer doesn't end this one
+            self.assertTrue(p.keys_paused)

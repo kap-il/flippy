@@ -66,18 +66,25 @@ function build(s) {
       el("p", { class: "sub" }, "Let me see your screen and lend a hand."), perms);
   }
 
-  // macOS: Flippy's own hotkeys. COSMIC: the shortcuts COSMIC runs for Flippy (flippy/linux/setup.py).
-  const first = !mac && s.shortcuts && s.shortcuts.length ? s.shortcuts[0] : null;
-  const shortcutsOk = mac || !(s.shortcuts_missing || []).length;
-  wrap.append(step(shortcutsOk, mac ? "3" : "2", "Your shortcut"),
-    el("p", { class: "sub" }, "That’s how you call me, from any app."),
-    el("div", { class: "card" }, el("div", { class: "row" },
-      el("div", { class: "text" }, el("span", { class: "label" }, mac ? "Ask about the screen" : first ? first.label : "Flippy’s shortcuts"),
-        el("div", { class: "help" }, mac ? "There are more, like circling something or checking a video."
-          : shortcutsOk ? "COSMIC runs these. Change them in COSMIC Settings." : "Some of Flippy\u2019s shortcuts aren\u2019t in COSMIC yet.")),
-      el("div", { class: "control" }, mac ? F.keycaps(s.ask) : first ? F.tokens(first.keys) : null,
-        !shortcutsOk ? el("button", { class: "btn", onclick: () => act("shortcuts") }, "Add them") : null,
-        el("button", { class: "btn quiet", onclick: () => F.go("settings/shortcuts") }, mac ? "Change" : "All shortcuts")))));
+  // macOS: Flippy's own hotkeys, the Shortcuts page's rows, so each can be recorded right here.
+  // COSMIC: the shortcuts COSMIC runs for Flippy (flippy/linux/setup.py).
+  if (mac) {
+    const keys = ["keys.ask", "keys.draw", "keys.video", "keys.pause"].map((id) => F.fields.get(id)).filter(Boolean);
+    wrap.append(step(true, "3", "Your shortcuts"),
+      el("p", { class: "sub" }, "That’s how you call me, from any app. Record new keys for any of them."),
+      el("div", { class: "card" }, keys.map(F.fieldRow)));
+  } else {
+    const first = s.shortcuts && s.shortcuts.length ? s.shortcuts[0] : null;
+    const shortcutsOk = !(s.shortcuts_missing || []).length;
+    wrap.append(step(shortcutsOk, "2", "Your shortcut"),
+      el("p", { class: "sub" }, "That’s how you call me, from any app."),
+      el("div", { class: "card" }, el("div", { class: "row" },
+        el("div", { class: "text" }, el("span", { class: "label" }, first ? first.label : "Flippy’s shortcuts"),
+          el("div", { class: "help" }, shortcutsOk ? "COSMIC runs these. Change them in COSMIC Settings." : "Some of Flippy\u2019s shortcuts aren\u2019t in COSMIC yet.")),
+        el("div", { class: "control" }, first ? F.tokens(first.keys) : null,
+          !shortcutsOk ? el("button", { class: "btn", onclick: () => act("shortcuts") }, "Add them") : null,
+          el("button", { class: "btn quiet", onclick: () => F.go("settings/shortcuts") }, "All shortcuts")))));
+  }
 
   wrap.append(el("h2", {}, "Startup"), el("div", { class: "card" }, el("div", { class: "row" },
     el("div", { class: "text" }, el("label", { class: "label", for: "login-item" }, "Launch at login"),
@@ -110,7 +117,7 @@ function show(s) {
   last = s;
   if (!onSetup() || !changed) return;
   const page = document.getElementById("page");
-  if (page.querySelector("select:focus")) return;  // don't close an open menu under the pointer
+  if (page.querySelector("select:focus, .keys.recording")) return;  // don't close an open menu or end a recording
   const y = page.scrollTop;
   page.replaceChildren(build(s));
   page.scrollTop = y;

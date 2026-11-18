@@ -724,6 +724,8 @@ class Platform(AppHost):
         self.nudge = Nudge()
         self.action_card = Nudge()  # separate from tips and update cards
         self.double_tap = hotkeys.DoubleTap()
+        self.keys_paused = 0  # nonzero while the settings window records a shortcut: that recording's number
+        self.key_pauses = 0   # recordings so far, so an old one's timer can't end a newer one (pause_keys)
         self.command = lambda cmd: "not ready"
 
     def input_box(self, on_submit, on_cancel):
@@ -759,11 +761,30 @@ class Platform(AppHost):
     def _app_closed(self):
         from . import ax
         super()._app_closed()
+        self.pause_keys(False)  # a recording the window didn't get to finish
         ax.give_back_front()
+
+    KEYS_PAUSE_S = 60  # a recording left running gives the hotkeys back after this long
+
+    def pause_keys(self, on):
+        """Let go of Flippy's hotkeys while the settings window records a shortcut, so pressing the current one
+        reaches the page instead of opening the box; on=False (or KEYS_PAUSE_S later) binds them again."""
+        if not on:
+            if self.keys_paused:
+                self.keys_paused = 0
+                self._bind_keys()
+            return
+        self.key_pauses += 1
+        self.keys_paused = gen = self.key_pauses
+        for hid in (1, 2, 3):
+            hotkeys.unregister(hid)
+        loop.timeout_add(self.KEYS_PAUSE_S * 1000, lambda: self.keys_paused == gen and self.pause_keys(False) and False)
 
     def _bind_keys(self):
         self.key_errors = {}
         for hid, name in ((1, "ask"), (2, "draw"), (3, "video")):
+            if self.keys_paused:  # a setting changed mid-recording: bound again when it ends
+                continue
             err = hotkeys.register(hid, settings.get("keys", name), lambda n=name: self.command(f"hotkey {n}"))
             self.key_errors[name] = err
             if err:

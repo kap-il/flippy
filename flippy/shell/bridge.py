@@ -196,6 +196,10 @@ class Bridge:
         self.op_set_many({f["id"]: f["default"] for f in p["fields"]})
         return before
 
+    def op_shortcut_recording(self, on):
+        """The page started (on) or stopped recording a shortcut: Flippy lets go of its hotkeys meanwhile."""
+        return self.command("keys-pause" if on else "keys-resume")
+
     def op_command(self, name):
         if name not in COMMANDS:
             raise ValueError(f"command not allowed: {name}")

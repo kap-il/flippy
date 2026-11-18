@@ -164,28 +164,52 @@ F.keycaps = (combo) => {
 // Keycaps from ready-made tokens (COSMIC's accelerators: ["Super", "Shift", "Space"]).
 F.tokens = (tokens) => el("span", { class: "keys", "aria-label": tokens.join(" ") }, tokens.map((t) => el("kbd", {}, t)));
 const KEYNAMES = { " ": "space", Enter: "return", Tab: "tab", Escape: "escape" };
+const MODIFIERS = ["Meta", "Shift", "Alt", "Control"];
+const TAKEN = "That shortcut is taken by another app. Try another.";
+const ONLY_MODS = "Only the modifiers came through. If you pressed a key too, another app has that shortcut.";
+function rowError(row, message) {
+  row.classList.add("error");
+  const h = row.querySelector(".help");
+  if (h) h.textContent = message;
+}
+// Flippy lets go of its own hotkeys while recording (bridge op_shortcut_recording), so its current shortcut reaches
+// the page. One another app or macOS holds never arrives whole: the modifiers come and go with no key, or the key
+// comes without them. Either way, say it's taken and keep listening.
 function recordShortcut(f, row, button) {
   let caps = row.querySelector(".keys");
+  const held = new Set();
+  let pressed = false;  // a modifier was down during this try
   caps.classList.add("recording");
   caps.replaceChildren(el("kbd", {}, "Type a shortcut"));
   button.textContent = "Cancel";
+  F.call("shortcut_recording", { on: true }).catch(() => {});
   const stop = () => {
     document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("keyup", onUp, true);
+    F.call("shortcut_recording", { on: false }).catch(() => {});
     button.textContent = "Record";
     button.onclick = () => recordShortcut(f, row, button);
+  };
+  const onUp = (e) => {
+    if (!MODIFIERS.includes(e.key)) return;
+    held.delete(e.key);
+    if (!held.size && pressed) { pressed = false; rowError(row, ONLY_MODS); }
   };
   const onKey = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (["Meta", "Shift", "Alt", "Control"].includes(e.key)) return;
+    if (MODIFIERS.includes(e.key)) { held.add(e.key); pressed = true; return; }
     const key = KEYNAMES[e.key] || (/^F\d+$/.test(e.key) ? e.key.toLowerCase() : e.code.startsWith("Key") ? e.code.slice(3).toLowerCase()
       : e.code.startsWith("Digit") ? e.code.slice(5) : e.key.toLowerCase());
     const mods = [e.ctrlKey && "ctrl", e.altKey && "option", e.shiftKey && "shift", e.metaKey && "cmd"].filter(Boolean);
+    if (!mods.length && pressed) { pressed = false; held.clear(); rowError(row, TAKEN); return; }
+    pressed = false;  // the key arrived: letting go of the modifiers now isn't a taken shortcut
     stop();
     if (!(await F.save(f, [...mods, key].join("+"), row))) caps.replaceWith(F.keycaps(F.value(f.id)));
   };
-  button.onclick = () => { stop(); caps.replaceWith(F.keycaps(F.value(f.id))); };
+  button.onclick = () => { stop(); row.replaceWith(F.fieldRow(F.fields.get(f.id))); };  // fresh: no leftover error
   document.addEventListener("keydown", onKey, true);
+  document.addEventListener("keyup", onUp, true);
 }
 
 F.controlFor = (f, row) => {

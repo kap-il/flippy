@@ -122,5 +122,4 @@ def page_state(platform_state):
     s["note"], s["attention"] = provider_note(mode, s.get("claude", False), s.get("codex", False))
     s["connected"] = bool(ready(mode, s.get("claude", False), s.get("codex", False)))
     s["done"] = s["connected"] and s.get("screen", True)
-    s["ask"] = settings.get("keys", "ask")
     return s

@@ -272,6 +272,10 @@ class Flippy:
             return updates.current_version()
         elif cmd == "ping":
             return "pong"
+        elif cmd in ("keys-pause", "keys-resume"):  # the settings window is recording a shortcut (macOS)
+            if hasattr(self.ui, "pause_keys"):
+                self.ui.pause_keys(cmd == "keys-pause")
+            return "ok"
         elif cmd.startswith("help-mode "):  # help-mode off|quiet
             return self.set_command("help.mode " + cmd.split(maxsplit=1)[1])
         elif cmd.startswith("click "):  # click <x> <y> [double]: logical px, top-left origin (Settings: automation)
